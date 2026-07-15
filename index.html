@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#A51D21" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="FixPay" />
+    <title>FixPay</title>
+  </head>
+  <body>
+    <!-- Self-healing: if a stale Workbox/VitePWA service worker is controlling
+         this page, unregister it + clear all caches + hard-reload so MSW can
+         take over cleanly in dev mode. Runs synchronously before module scripts. -->
+    <script>
+      (function () {
+        var ctrl = navigator.serviceWorker && navigator.serviceWorker.controller;
+        if (ctrl && !ctrl.scriptURL.includes('mockServiceWorker')) {
+          navigator.serviceWorker.getRegistrations()
+            .then(function (regs) {
+              return Promise.all(regs.map(function (r) { return r.unregister(); }));
+            })
+            .then(function () {
+              return caches.keys().then(function (keys) {
+                return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+              });
+            })
+            .then(function () { location.reload(true); });
+        }
+      })();
+    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
