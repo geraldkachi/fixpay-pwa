@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { ArrowPathIcon, HomeIcon, ExclamationTriangleIcon, ClockIcon } from '@heroicons/react/24/outline'
 import { formatCurrency } from '@/lib/utils'
@@ -28,7 +28,8 @@ export function PendingScreen() {
   const navigate = useNavigate()
   const { state } = useLocation()
   const r = state as PendingState
-
+ // Ref to prevent multiple simultaneous requery calls
+  const isRequestingRef = useRef(false)
   const [loading, setLoading] = useState(false)
   const [statusText, setStatusText] = useState('Transaction is currently processing...')
   const [errorMsg, setErrorMsg] = useState('')
@@ -41,9 +42,17 @@ export function PendingScreen() {
 
   if (!r) return null
 
-  const handleRequery = async () => {
-    setLoading(true)
-    setErrorMsg('')
+  // Wrap in useCallback so it can be safely used in useEffect dependency array
+  const handleRequery = useCallback(async (silent = false) => {
+    // Prevent overlapping requests
+    if (isRequestingRef.current) return
+    
+    isRequestingRef.current = true
+    if (!silent) {
+      setLoading(true)
+      setErrorMsg('')
+    }
+
     try {
       const res = await paymentsService.requery(r.requestId)
       queryClient.invalidateQueries({ queryKey: ['wallet'] })
@@ -65,19 +74,84 @@ export function PendingScreen() {
         })
       } else if (res.status === 'failed' || outcome.isFatal) {
         // Failed transaction
-        setErrorMsg(outcome.message || 'Transaction failed. Please contact support.')
-        setStatusText('Transaction Failed')
+        if (!silent) {
+          setErrorMsg(outcome.message || 'Transaction failed. Please contact support.')
+          setStatusText('Transaction Failed')
+        }
       } else {
         // Still pending
-        setStatusText(outcome.message || 'Transaction is still processing. Please try again in a few moments.')
+        if (!silent) {
+          setStatusText(outcome.message || 'Transaction is still processing. Please try again in a few moments.')
+        }
       }
     } catch (err: any) {
-      const serverMsg = err?.response?.data?.message || 'Failed to fetch status. Try again.'
-      setErrorMsg(serverMsg)
+      if (!silent) {
+        const serverMsg = err?.response?.data?.message || 'Failed to fetch status. Try again.'
+        setErrorMsg(serverMsg)
+      }
     } finally {
-      setLoading(false)
+      isRequestingRef.current = false
+      if (!silent) {
+        setLoading(false)
+      }
     }
-  }
+  }, [r, navigate])
+
+  // Auto-requery polling effect
+  useEffect(() => {
+    // Do not poll if there's already a fatal error or if the component is unmounted
+    if (errorMsg || !r?.requestId) return
+
+    // Set up the interval to hit the endpoint every 5 seconds (5000ms)
+    const intervalId = setInterval(() => {
+      // Pass 'true' for silent mode so it doesn't toggle UI loading states
+      handleRequery(true)
+    }, 5000)
+
+    // Cleanup interval on unmount or when errorMsg changes
+    return () => clearInterval(intervalId)
+  }, [handleRequery, errorMsg, r?.requestId])
+
+  if (!r) return null
+
+
+  // const handleRequery = async () => {
+  //   setLoading(true)
+  //   setErrorMsg('')
+  //   try {
+  //     const res = await paymentsService.requery(r.requestId)
+  //     queryClient.invalidateQueries({ queryKey: ['wallet'] })
+  //     queryClient.invalidateQueries({ queryKey: ['transactions'] })
+
+  //     const outcome = resolveVtpassCode(res.vtpass_code)
+
+  //     if (res.status === 'delivered' || res.status === 'completed' || outcome.isSuccess) {
+  //       // Successful transaction!
+  //       navigate('/payments/receipt', {
+  //         state: {
+  //           ...r,
+  //           amount_kobo: res.amount_kobo || r.amount_kobo,
+  //           token: res.token || r.pin, // map electricity token / PIN if retrieved
+  //           pin: res.Pin || r.pin,
+  //           date: new Date().toISOString(),
+  //         },
+  //         replace: true,
+  //       })
+  //     } else if (res.status === 'failed' || outcome.isFatal) {
+  //       // Failed transaction
+  //       setErrorMsg(outcome.message || 'Transaction failed. Please contact support.')
+  //       setStatusText('Transaction Failed')
+  //     } else {
+  //       // Still pending
+  //       setStatusText(outcome.message || 'Transaction is still processing. Please try again in a few moments.')
+  //     }
+  //   } catch (err: any) {
+  //     const serverMsg = err?.response?.data?.message || 'Failed to fetch status. Try again.'
+  //     setErrorMsg(serverMsg)
+  //   } finally {
+  //     setLoading(false)
+  //   }
+  // }
 
   return (
     <div className="flex flex-col h-[100dvh] bg-[#F2F2F7]">
