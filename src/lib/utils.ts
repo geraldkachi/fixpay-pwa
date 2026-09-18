@@ -63,3 +63,70 @@ export function hexToRgb(hex: string): string {
   const b = parseInt(hex.slice(5, 7), 16)
   return `${r} ${g} ${b}`
 }
+
+// In a utils file
+export function generateTransactionRef(): string {
+  const date = new Date()
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  const seconds = String(date.getSeconds()).padStart(2, '0')
+  const random = Math.random().toString(36).substring(2, 6).toUpperCase()
+  
+  return `DGN${year}${month}${day}${hours}${minutes}${seconds}${random}`
+}
+
+/**
+ * Normalizes any common date input into strict 'dd/mm/yyyy'.
+ * Accepts: dd/mm/yyyy, dd-mm-yyyy, yyyy-mm-dd, Date object, ISO string.
+ * Returns '' if unparseable.
+ */
+export function formatDateToDDMMYYYY(input: string | Date): string {
+  if (!input) return ''
+
+  // Already in dd/mm/yyyy? Validate & return as-is
+  const ddmmyyyy = /^(\d{2})\/(\d{2})\/(\d{4})$/
+  const match = String(input).match(ddmmyyyy)
+  if (match) {
+    const [, dd, mm, yyyy] = match
+    const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd))
+    // Guard against invalid dates like 31/02/1993
+    if (
+      d.getFullYear() === Number(yyyy) &&
+      d.getMonth() === Number(mm) - 1 &&
+      d.getDate() === Number(dd)
+    ) {
+      return `${dd}/${mm}/${yyyy}`
+    }
+    return ''
+  }
+
+  // Try yyyy-mm-dd (HTML date input native format)
+  const yyyymmdd = /^(\d{4})-(\d{2})-(\d{2})$/
+  const isoMatch = String(input).match(yyyymmdd)
+  if (isoMatch) {
+    const [, yyyy, mm, dd] = isoMatch
+    return `${dd}/${mm}/${yyyy}`
+  }
+
+  // Try dd-mm-yyyy
+  const ddmmyyyyDash = /^(\d{2})-(\d{2})-(\d{4})$/
+  const dashMatch = String(input).match(ddmmyyyyDash)
+  if (dashMatch) {
+    const [, dd, mm, yyyy] = dashMatch
+    return `${dd}/${mm}/${yyyy}`
+  }
+
+  // Fall back to native Date parser
+  const parsed = new Date(input)
+  if (!isNaN(parsed.getTime())) {
+    const dd = String(parsed.getDate()).padStart(2, '0')
+    const mm = String(parsed.getMonth() + 1).padStart(2, '0')
+    const yyyy = parsed.getFullYear()
+    return `${dd}/${mm}/${yyyy}`
+  }
+
+  return ''
+}

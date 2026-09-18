@@ -2,16 +2,52 @@ import { api } from '@/lib/api'
 import { saveTransactions, loadTransactions, loadTransaction } from '@/lib/db'
 import type { Wallet, Transaction, TxType } from '@/types'
 
+export interface CreateWalletPayload {
+  image: File | Blob           // ← NEW: profile/KYC image
+  bvn: string                  // ← NEW: Bank Verification Number
+  nin: string                  // ← NEW: National Identity Number
+  accountName: string          // ← NEW: account holder name
+  dateOfBirth: string
+  gender: number
+  lastName: string
+  otherNames: string
+  phoneNo: string
+  transactionTrackingRef: string
+  placeOfBirth: string
+  address: string
+  ninUserId: string
+  nextOfKinPhoneNo: string
+  nextOfKinName: string
+  email: string
+}
+
 export interface WalletBalanceResponse {
   id: string
-  balance_kobo: number      // kobo integer — returned directly by backend
+  user_id: string
+  tenant_id: string | null
+  balance_kobo: number
   ledger_balance_kobo: number
   currency: string
   status: string
   virtual_account_number: string | null
   virtual_account_bank: string | null
   virtual_account_bank_code: string | null
+  virtual_account_reference: string | null
+  updated_at?: string
+  created_at?: string
 }
+
+export interface FundWalletPayload {
+  amount: number   // in NGN (naira), NOT kobo — e.g. 1850 = ₦1,850
+}
+
+export interface FundWalletResponse {
+  payment_url: string
+  access_code: string
+  reference: string
+}
+
+
 
 function toWallet(b: any): Wallet {
   let balanceKobo = 0
@@ -25,19 +61,19 @@ function toWallet(b: any): Wallet {
 
   const virtualAccount = b.virtualAccount || {
     accountNumber: b.virtual_account_number ?? '',
-    bankName:      b.virtual_account_bank ?? '',
-    bankCode:      b.virtual_account_bank_code ?? '',
+    bankName: b.virtual_account_bank ?? '',
+    bankCode: b.virtual_account_bank_code ?? '',
   }
 
   return {
-    id: b.id ?? b.walletId,
+    id: b.id ?? b.walletId ?? b.user_id,
     balanceKobo,
     currency: b.currency ?? 'NGN',
     status: (b.status ?? 'active').toLowerCase() as Wallet['status'],
     virtualAccount: {
       accountNumber: virtualAccount.accountNumber ?? '',
-      bankName:      virtualAccount.bankName ?? '',
-      bankCode:      virtualAccount.bankCode ?? '',
+      bankName: virtualAccount.bankName ?? '',
+      bankCode: virtualAccount.bankCode ?? '',
     },
   }
 }
@@ -110,6 +146,58 @@ export interface TransactionPage {
 }
 
 export const walletService = {
+  //  POST /wallet/create — Create a new wallet
+  createWallet: (payload: CreateWalletPayload): Promise<Wallet> => {
+  const formData = new FormData()
+
+  // File field
+  formData.append('image', payload.image)
+
+  // Text fields — all values must be strings in FormData
+  formData.append('bvn', payload.bvn)
+  formData.append('nin', payload.nin)
+  formData.append('accountName', payload.accountName)
+  formData.append('dateOfBirth', payload.dateOfBirth)
+  formData.append('gender', String(payload.gender))
+  formData.append('lastName', payload.lastName)
+  formData.append('otherNames', payload.otherNames)
+  formData.append('phoneNo', payload.phoneNo)
+  formData.append('transactionTrackingRef', payload.transactionTrackingRef)
+  formData.append('placeOfBirth', payload.placeOfBirth)
+  formData.append('address', payload.address)
+  formData.append('ninUserId', payload.ninUserId)
+  formData.append('nextOfKinPhoneNo', payload.nextOfKinPhoneNo)
+  formData.append('nextOfKinName', payload.nextOfKinName)
+  formData.append('email', payload.email)
+
+  return api.post<{ status: boolean; message: string; data: WalletBalanceResponse }>(
+    '/wallet/create',
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    }
+  ).then(r => {
+    const response = r.data as { status: boolean; message: string; data: WalletBalanceResponse }
+    if (!response.status) {
+      throw new Error(response.message || 'Failed to create wallet')
+    }
+    return toWallet(response.data)
+  })
+},
+  // createWallet: (payload: CreateWalletPayload): Promise<Wallet> =>
+  //   api.post<{ status: boolean; message: string; data: WalletBalanceResponse }>(
+  //     '/wallet/create',
+  //     payload
+  //   ).then(r => {
+  //     const response = r.data as { status: boolean; message: string; data: WalletBalanceResponse }
+  //     if (!response.status) {
+  //       throw new Error(response.message || 'Failed to create wallet')
+  //     }
+  //     return toWallet(response.data)
+  //   }),
+
   /**
    * GET /wallet — wrapped in ApiResponse<WalletBalanceResponse>.
    * Backend returns balance_kobo (integer kobo), NOT a float NGN value.
@@ -123,6 +211,24 @@ export const walletService = {
       // direct shape (no ApiResponse wrapper)
       return toWallet(r.data as WalletBalanceResponse)
     }),
+
+    /**
+   * POST /wallet/fund — Initiates a funding session.
+   * Returns a payment_url the client must redirect the user to.
+   *
+   * NOTE: `amount` is sent in NGN (naira), not kobo.
+   * The backend example shows `{ "amount": 1850 }` for ₦1,850.
+   */
+  fundWallet: (payload: FundWalletPayload): Promise<FundWalletResponse> =>
+    api
+      .post<FundWalletResponse>('/wallet/fund', payload)
+      .then(r => {
+        const data = r.data as FundWalletResponse
+        if (!data?.payment_url) {
+          throw new Error('Failed to initiate funding — no payment URL returned')
+        }
+        return data
+      }),
 
   /**
    * GET /wallet/transactions?page&size&type

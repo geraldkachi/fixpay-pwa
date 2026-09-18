@@ -6,10 +6,14 @@ import { useDuplicatePaymentStore } from '@/store/duplicatePayment.store'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? '/api',
-  timeout: 30_000,
-  // Always send cookies so the httpOnly refresh_token cookie is included
-  withCredentials: true,
-  headers: { 'Content-Type': 'application/json' },
+  // timeout: 30_000,
+  timeout: 120_000,
+  // Always send cookies so the httpOnly refresh_token cookie is included // with laravel withCredentials: true, // with laravel w
+  withCredentials: false,
+  headers: {
+     'Content-Type': 'application/json',
+      'Accept': 'application/json',
+     },
 })
 
 const idempotencyCache = new Map<string, { key: string, expiry: number }>()

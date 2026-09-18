@@ -4,6 +4,8 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from '@/lib/query-client'
 import App from './App'
 import './index.css'
+import { Toaster } from 'react-hot-toast';
+
 
 // Reset the splash guard on every fresh page load so the splash always plays.
 // sessionStorage is cleared on tab-close / reload, but we do it explicitly here
@@ -60,6 +62,7 @@ prepare().then(() => {
     <React.StrictMode>
       <QueryClientProvider client={queryClient}>
         <App />
+        <Toaster />
       </QueryClientProvider>
     </React.StrictMode>
   )

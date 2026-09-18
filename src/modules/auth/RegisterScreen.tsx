@@ -58,7 +58,8 @@ export function RegisterScreen() {
       })
       localStorage.setItem('fixpay_onboarded', '1')
       setPending(data.phone, data.email)
-      navigate('/auth/otp')
+      // navigate('/auth/otp')
+      navigate('/auth/login', { replace: true, state: { verified: true } })
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
       setServerError(msg ?? 'Registration failed. Try again.')
@@ -78,7 +79,7 @@ export function RegisterScreen() {
         <p className="text-[15px] text-gray-500 mb-6">Join FixPay to send money and pay bills.</p>
 
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
-          <div className="flex gap-3">
+          <div className="flex gap-3 flex-1">
             <Input label="First Name" type="text" placeholder="Ada"
               error={errors.first_name?.message} {...register('first_name')} />
             <Input label="Last Name" type="text" placeholder="Obi"

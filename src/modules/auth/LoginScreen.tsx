@@ -32,7 +32,7 @@ export function LoginScreen() {
   const onSubmit = async (data: FormData) => {
     setServerError('')
     try {
-      const res = await api.post('/auth/login', {
+      const res = await api.post('/auth/login/', {
         identifier: data.identifier,
         password: data.password,
       })
