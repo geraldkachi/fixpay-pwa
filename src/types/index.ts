@@ -181,3 +181,10 @@ export interface MandateResponse {
   createdAt: string
   updatedAt: string
 }
+
+export interface DirectPaymentResponse extends BillPaymentResponse {
+  payment_url?: string
+  payfixy_reference?: string
+  payfixy_access_code?: string
+  message?: string
+}

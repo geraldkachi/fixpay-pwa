@@ -12,6 +12,11 @@ import { AppShell } from '@/components/layout/AppShell'
 import { RouteErrorBoundary } from '@/components/layout/RouteErrorBoundary'
 import { DuplicatePaymentModal } from '@/components/feature/DuplicatePaymentModal'
 
+
+const PaymentCallbackScreen = lazy(() =>
+  import('@/modules/payments/PaymentCallbackScreen')
+    .then(m => ({ default: m.PaymentCallbackScreen }))
+)
 // Auth
 const SplashScreen       = lazy(() => import('@/modules/auth/SplashScreen').then(m => ({ default: m.SplashScreen })))
 const WelcomeScreen      = lazy(() => import('@/modules/auth/WelcomeScreen').then(m => ({ default: m.WelcomeScreen })))
@@ -118,6 +123,8 @@ const router = createBrowserRouter([
       { path: '/auth/login',     element: <LoginScreen /> },
       { path: '/auth/otp',       element: <OtpScreen /> },
       { path: '/auth/pin',       element: <CreatePinScreen /> },
+        { path: '/payments/callback',   element: <PaymentCallbackScreen /> },
+
       {
         path: '/',
         element: <RequireAuth />,
@@ -131,6 +138,7 @@ const router = createBrowserRouter([
               { path: 'send',          element: <SendScreen /> },
               { path: 'wallet',        element: <WalletScreen /> },
               { path: 'more',          element: <MoreScreen /> },
+              // { path: '/payments/callback',   element: <PaymentCallbackScreen /> },
               { path: 'kyc',                   element: <KycStepper /> },
               { path: 'payments/airtime',      element: <AirtimeScreen /> },
               { path: 'payments/data',         element: <DataScreen /> },

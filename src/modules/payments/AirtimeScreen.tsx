@@ -14,6 +14,7 @@ import { useTransactionStore } from '@/store/transaction.store'
 import { PinPad } from '@/components/ui/PinPad'
 import { resolveVtpassCode } from '@/lib/vtpass-codes'
 import { PaymentMethodSelector, type PaymentMethod } from '@/components/feature/PaymentMethodSelector'
+import { redirectToPayfixy } from '@/lib/services/payment_redirect'
 
 const NETWORKS = [
   { id: 'mtn',      label: 'MTN',     color: '#FFCC00', text: '#000' },
@@ -47,50 +48,101 @@ export function AirtimeScreen() {
   const selectedNet = watch('serviceId')
   const isInternational = selectedNet === 'foreign-airtime'
 
+  // const onSubmit = async (data: FormData) => {
+  //   setPending(data)
+  //   if (paymentMethod === 'wallet') {
+  //     setPin('')
+  //     setPinError('')
+  //     setShowPin(true)
+  //   } else {
+  //     startProcessing()
+  //     try {
+  //       const initRes = await paymentsService.alternativeInitiate({
+  //         paymentMethod,
+  //         serviceId: data.serviceId,
+  //         phone: data.phone,
+  //         amount: data.amount,
+  //       })
+        
+  //       await new Promise(resolve => setTimeout(resolve, 2000))
+  //       const res = await paymentsService.alternativeVerify(initRes.gateway_reference)
+        
+  //       queryClient.invalidateQueries({ queryKey: ['wallet'] })
+  //       queryClient.invalidateQueries({ queryKey: ['transactions'] })
+
+  //       const outcome = resolveVtpassCode(res.vtpass_code)
+  //       const statePayload = {
+  //         type: 'airtime',
+  //         network: data.serviceId,
+  //         phone: data.phone,
+  //         amount_kobo: res.amount_kobo,
+  //         requestId: res.payment_reference,
+  //         date: new Date().toISOString(),
+  //       }
+
+  //       if (res.status === 'pending' || outcome.isPending) {
+  //         navigate('/payments/pending', { state: statePayload })
+  //       } else {
+  //         navigate('/payments/receipt', { state: statePayload })
+  //       }
+  //     } catch (err: any) {
+  //       alert(err?.response?.data?.message || 'Payment failed. Try again.')
+  //     } finally {
+  //       stopProcessing()
+  //     }
+  //   }
+  // }
   const onSubmit = async (data: FormData) => {
-    setPending(data)
-    if (paymentMethod === 'wallet') {
-      setPin('')
-      setPinError('')
-      setShowPin(true)
-    } else {
-      startProcessing()
-      try {
-        const initRes = await paymentsService.alternativeInitiate({
-          paymentMethod,
-          serviceId: data.serviceId,
-          phone: data.phone,
-          amount: data.amount,
-        })
-        
-        await new Promise(resolve => setTimeout(resolve, 2000))
-        const res = await paymentsService.alternativeVerify(initRes.gateway_reference)
-        
-        queryClient.invalidateQueries({ queryKey: ['wallet'] })
-        queryClient.invalidateQueries({ queryKey: ['transactions'] })
+  setPending(data)
 
-        const outcome = resolveVtpassCode(res.vtpass_code)
-        const statePayload = {
-          type: 'airtime',
-          network: data.serviceId,
-          phone: data.phone,
-          amount_kobo: res.amount_kobo,
-          requestId: res.payment_reference,
-          date: new Date().toISOString(),
-        }
-
-        if (res.status === 'pending' || outcome.isPending) {
-          navigate('/payments/pending', { state: statePayload })
-        } else {
-          navigate('/payments/receipt', { state: statePayload })
-        }
-      } catch (err: any) {
-        alert(err?.response?.data?.message || 'Payment failed. Try again.')
-      } finally {
-        stopProcessing()
-      }
-    }
+  // Wallet → PIN sheet
+  if (paymentMethod === 'wallet') {
+    setPin('')
+    setPinError('')
+    setShowPin(true)
+    return
   }
+
+  // Payfixy / Bank Mandate → hit /payments/vtpass directly, redirect to payment_url
+  startProcessing()
+  try {
+    const res = await paymentsService.initiateDirect({
+      serviceId: data.serviceId,
+      phone:     data.phone,
+      amount:    data.amount,
+    })
+
+    if (res.payment_url) {
+      redirectToPayfixy(res.payment_url, {
+        type: 'airtime',
+        network: data.serviceId,
+        phone: data.phone,
+        amount_kobo: res.amount_kobo,
+        payment_reference: res.payment_reference,
+        payfixy_reference: res.payfixy_reference,
+        payment_method: paymentMethod,
+        date: new Date().toISOString(),
+      })
+      return // page is navigating away
+    }
+
+    // No payment_url → fall back to pending screen
+    navigate('/payments/pending', {
+      state: {
+        type: 'airtime',
+        network: data.serviceId,
+        phone: data.phone,
+        amount_kobo: res.amount_kobo,
+        requestId: res.payment_reference,
+        date: new Date().toISOString(),
+      },
+    })
+  } catch (err: any) {
+    alert(err?.response?.data?.message || 'Payment failed. Try again.')
+  } finally {
+    stopProcessing()
+  }
+}
 
   const handlePinChange = async (val: string) => {
     setPin(val); setPinError('')

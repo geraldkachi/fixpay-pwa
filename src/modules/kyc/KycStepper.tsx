@@ -797,8 +797,8 @@ export function KycStepper() {
   // 2. Fetch KYC status (NIN / BVN)
   // ─────────────────────────────────────────────
   const [kycStatus, setKycStatus] = useState<{
-    hasNin: boolean
-    hasBvn: boolean
+    // hasNin: boolean
+    // hasBvn: boolean
   } | null>(null)
   const [kycLoading, setKycLoading] = useState(true)
 
@@ -807,17 +807,17 @@ export function KycStepper() {
       try {
         const res = await api.get('/kyc/status')
         const verifications = res.data.verifications || []
-        const hasNin = verifications.some(
-          (v: any) => v.type === 'NIN' && v.status === 'VERIFIED'
-        )
-        const hasBvn = verifications.some(
-          (v: any) =>
-            (v.type === 'BVN' || v.type === 'BVN_CONSENT') &&
-            v.status === 'VERIFIED'
-        )
-        setKycStatus({ hasNin, hasBvn })
+        // const hasNin = verifications.some(
+        //   (v: any) => v.type === 'NIN' && v.status === 'VERIFIED'
+        // )
+        // const hasBvn = verifications.some(
+        //   (v: any) =>
+        //     (v.type === 'BVN' || v.type === 'BVN_CONSENT') &&
+        //     v.status === 'VERIFIED'
+        // )
+        // setKycStatus({ /* hasNin: false, */ hasBvn })
       } catch {
-        setKycStatus({ hasNin: false, hasBvn: false })
+        // setKycStatus({ /* hasNin: false, */ hasBvn: false })
       } finally {
         setKycLoading(false)
       }
@@ -841,8 +841,8 @@ export function KycStepper() {
 
     const steps: Step[] = []
     if (!hasProfile) steps.push(0)
-    if (!kycStatus.hasNin) steps.push(1)
-    if (!kycStatus.hasBvn) steps.push(2)
+    // if (!kycStatus.hasNin) steps.push(1)
+    // if (!kycStatus.hasBvn) steps.push(2)
 
     setUnvalidatedSteps(steps)
     setCurrentStepIndex(0)

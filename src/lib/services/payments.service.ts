@@ -88,10 +88,10 @@ function vtpassPayload(
   variationCode?: string,
 ) {
   return {
-    service_id:     serviceId,
-    amount_kobo:    Math.round(amountNaira * 100),
+    service_id: serviceId,
+    amount_kobo: Math.round(amountNaira * 100),
     phone,
-    billers_code:   billersCode  ?? undefined,
+    billers_code: billersCode ?? undefined,
     variation_code: variationCode ?? undefined,
   }
 }
@@ -139,9 +139,9 @@ export const paymentsService = {
   // POST /api/payments/vtpass/verify (proxied by backend to VTpass)
   verify: (payload: VerifyPayload): Promise<BillerVerify> =>
     api.post<VtpassVerifyResponse>('/payments/verify', {
-      service_id:   payload.serviceId,
+      service_id: payload.serviceId,
       billers_code: payload.billersCode,
-      type:         payload.type,
+      type: payload.type,
     }).then(r => {
       const d = r.data
       const content = d.content || d
@@ -215,4 +215,37 @@ export const paymentsService = {
   alternativeVerify: (gatewayReference: string): Promise<BillPaymentResponse> =>
     api.post<any>('/payments/alternative/verify', { gateway_reference: gatewayReference })
       .then(r => mapResponse(r.data, 0)),
+
+      // Direct Payfixy initiate — POST /payments/vtpass returns a payment_url
+// to hand off to the gateway widget. NO PIN involved.
+initiateDirect: (payload: { serviceId: string; phone?: string; amount: number }) =>
+  api.post<any>('/payments/vtpass', {
+    service_id:     payload.serviceId,
+    amount_kobo:    Math.round(payload.amount * 100),
+    phone:          payload.phone || '',
+    billers_code:   '',
+    variation_code: '',
+  }).then(r => {
+    const d = r.data?.data || r.data
+    return {
+      ...mapResponse(d, payload.amount),
+      payment_url: d.payment_url,
+      payfixy_reference: d.payfixy_reference,
+      payfixy_access_code: d.payfixy_access_code,
+      message: d.message,
+    }
+  }),
+
+  // POST /payment/webhook?vtpayment_id=<id>   (no body)
+  // Uses the raw axios instance directly because this path lives OUTSIDE the
+  // /api/v1/... prefix that `api` normally prepends, and the backend is on a
+  // different origin (127.0.0.1:8000 vs the Vite dev server on :5173).
+  webhookConfirm: (vtpaymentId: string): Promise<BillPaymentResponse> =>
+    api.post<any>(`/payment/webhook?vtpayment_id=${encodeURIComponent(vtpaymentId)}`, undefined, {
+      baseURL: import.meta.env.VITE_WEBHOOK_BASE_URL || 'http://127.0.0.1:8000/api',
+      headers: { 'Content-Type': 'application/json' },
+    }).then(r => {
+      const d = r.data?.data || r.data
+      return mapResponse(d, 0)
+    }),
 }
