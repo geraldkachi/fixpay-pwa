@@ -7,7 +7,7 @@ const tabs = [
   { to: '/home',     label: 'Home',     Icon: HomeIcon,            IconActive: HomeIconSolid },
   { to: '/payments', label: 'Pay',      Icon: CreditCardIcon,      IconActive: CreditCardSolid },
   { to: '/send',     label: 'Send',     Icon: PaperAirplaneIcon,   IconActive: PaperAirplaneSolid },
-  { to: '/wallet',   label: 'Wallet',   Icon: WalletIcon,          IconActive: WalletSolid },
+  { to: '/wallet',   label: 'Transactions',   Icon: WalletIcon,          IconActive: WalletSolid },
   { to: '/more',     label: 'More',     Icon: EllipsisHorizontalIcon, IconActive: EllipsisSolid },
 ]
 
