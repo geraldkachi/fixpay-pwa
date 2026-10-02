@@ -2,6 +2,7 @@ import { api } from '@/lib/api'
 import { saveTransactions, loadTransactions, loadTransaction } from '@/lib/db'
 import type { Wallet, Transaction, TxType } from '@/types'
 
+export type TxStatus = 'initiated' | 'processing' | 'pending' | 'completed' | 'failed' | 'reversed'
 export interface CreateWalletPayload {
   image: File | Blob           // ← NEW: profile/KYC image
   bvn: string                  // ← NEW: Bank Verification Number
@@ -78,63 +79,118 @@ function toWallet(b: any): Wallet {
   }
 }
 
-function toTransaction(tx: any): Transaction {
-  let type: TxType = 'transfer_out'
-  if (tx.type) {
-    type = tx.type
-  } else if (tx.entry_type) {
-    if (tx.entry_type === 'credit') {
-      const desc = (tx.description ?? '').toLowerCase()
-      if (desc.includes('fund') || desc.includes('deposit') || desc.includes('topup')) {
-        type = 'wallet_funding'
-      } else {
-        type = 'transfer_in'
-      }
-    } else {
-      const desc = (tx.description ?? '').toLowerCase()
-      if (desc.includes('bill') || desc.includes('purchase') || desc.includes('airtime') || desc.includes('data') || desc.includes('power') || desc.includes('tv') || desc.includes('insurance') || desc.includes('education')) {
-        type = 'bill_payment'
-      } else {
-        type = 'transfer_out'
-      }
-    }
-  }
+// function toTransaction(tx: any): Transaction {
+//   let type: TxType = 'transfer_out'
+//   if (tx.type) {
+//     type = tx.type
+//   } else if (tx.entry_type) {
+//     if (tx.entry_type === 'credit') {
+//       const desc = (tx.description ?? '').toLowerCase()
+//       if (desc.includes('fund') || desc.includes('deposit') || desc.includes('topup')) {
+//         type = 'wallet_funding'
+//       } else {
+//         type = 'transfer_in'
+//       }
+//     } else {
+//       const desc = (tx.description ?? '').toLowerCase()
+//       if (desc.includes('bill') || desc.includes('purchase') || desc.includes('airtime') || desc.includes('data') || desc.includes('power') || desc.includes('tv') || desc.includes('insurance') || desc.includes('education')) {
+//         type = 'bill_payment'
+//       } else {
+//         type = 'transfer_out'
+//       }
+//     }
+//   }
 
-  let serviceId = tx.serviceId ?? tx.service_id
-  let serviceName = tx.serviceName ?? tx.service_name
-  if (!serviceId && type === 'bill_payment') {
-    const desc = (tx.description ?? '').toLowerCase()
-    if (desc.includes('airtime')) {
-      serviceId = 'airtime'
-      serviceName = 'Airtime'
-    } else if (desc.includes('data')) {
-      serviceId = 'data'
-      serviceName = 'Data'
-    } else if (desc.includes('dstv') || desc.includes('gotv') || desc.includes('startimes') || desc.includes('showmax') || desc.includes('tv')) {
-      serviceId = 'tv'
-      serviceName = 'TV'
-    } else if (desc.includes('electricity') || desc.includes('power') || desc.includes('meter')) {
-      serviceId = 'electricity'
-      serviceName = 'Electricity'
-    }
+//   let serviceId = tx.serviceId ?? tx.service_id
+//   let serviceName = tx.serviceName ?? tx.service_name
+//   if (!serviceId && type === 'bill_payment') {
+//     const desc = (tx.description ?? '').toLowerCase()
+//     if (desc.includes('airtime')) {
+//       serviceId = 'airtime'
+//       serviceName = 'Airtime'
+//     } else if (desc.includes('data')) {
+//       serviceId = 'data'
+//       serviceName = 'Data'
+//     } else if (desc.includes('dstv') || desc.includes('gotv') || desc.includes('startimes') || desc.includes('showmax') || desc.includes('tv')) {
+//       serviceId = 'tv'
+//       serviceName = 'TV'
+//     } else if (desc.includes('electricity') || desc.includes('power') || desc.includes('meter')) {
+//       serviceId = 'electricity'
+//       serviceName = 'Electricity'
+//     }
+//   }
+
+//   return {
+//     id: tx.id,
+//     type,
+//     amountKobo: tx.amountKobo ?? tx.amount_kobo ?? 0,
+//     feeKobo: tx.feeKobo ?? tx.fee_kobo ?? 0,
+//     status: tx.status ?? 'completed',
+//     reference: tx.reference ?? tx.correlation_id ?? tx.id,
+//     description: tx.description ?? '',
+//     counterpartyName: tx.counterpartyName ?? tx.counterparty_name,
+//     serviceId,
+//     serviceName,
+//     token: tx.token,
+//     units: tx.units,
+//     Pin: tx.Pin ?? tx.pin,
+//     purchased_code: tx.purchased_code ?? tx.purchasedCode,
+//     createdAt: tx.createdAt ?? tx.created_at ?? new Date().toISOString(),
+//   }
+// }
+function toTransaction(tx: any): Transaction {
+  const serviceIdRaw = tx.service_id ?? tx.serviceId ?? null
+
+  // Map backend payment_status → your TxStatus
+  const rawStatus = (tx.payment_status ?? tx.status ?? 'completed').toLowerCase()
+  const statusMap: Record<string, TxStatus> = {
+    completed:  'completed',
+    processing: 'processing',
+    pending:    'pending',
+    initiated:  'initiated',
+    failed:     'failed',
+    reversed:   'reversed',
   }
+  const status: TxStatus = statusMap[rawStatus] ?? 'completed'
+
+  // Infer type from service_id (bill_payment) unless wallet/transfer keywords
+  let type: TxType = 'bill_payment'
+  const sid = (serviceIdRaw ?? '').toLowerCase()
+  if (sid === 'wallet_funding' || sid === 'wallet') type = 'wallet_funding'
+  else if (sid === 'transfer_in')  type = 'transfer_in'
+  else if (sid === 'transfer_out') type = 'transfer_out'
+  else if (!sid && tx.entry_type === 'credit') type = 'transfer_in'
+  else if (!sid && tx.entry_type === 'debit')  type = 'transfer_out'
+
+  // Build description from response_payload when present
+  const productName = tx.response_payload?.content?.transactions?.product_name
+  const providerDesc = tx.response_payload?.response_description
+  const description =
+    tx.description ??
+    productName ??
+    (sid ? `${sid.toUpperCase()} Purchase` : (providerDesc ?? 'Transaction'))
+
+  // Extract token/units from response_payload if top-level missing
+  const rTx = tx.response_payload?.content?.transactions
+  const token = tx.token ?? rTx?.token ?? tx.purchased_code
+  const units = tx.units ?? rTx?.units
 
   return {
     id: tx.id,
     type,
-    amountKobo: tx.amountKobo ?? tx.amount_kobo ?? 0,
-    feeKobo: tx.feeKobo ?? tx.fee_kobo ?? 0,
-    status: tx.status ?? 'completed',
-    reference: tx.reference ?? tx.correlation_id ?? tx.id,
-    description: tx.description ?? '',
-    counterpartyName: tx.counterpartyName ?? tx.counterparty_name,
-    serviceId,
-    serviceName,
-    token: tx.token,
-    units: tx.units,
+    amountKobo: tx.amount_kobo ?? tx.amountKobo ?? 0,
+    feeKobo:    tx.fee_kobo    ?? tx.feeKobo    ?? 0,
+    status,
+    reference:  tx.payment_reference ?? tx.reference ?? tx.correlation_id ?? tx.id,
+    description,
+    counterpartyName: tx.phone ?? tx.counterpartyName ?? tx.counterparty_name,
+    serviceId:  serviceIdRaw ?? undefined,
+    serviceName: tx.serviceName ?? tx.service_name,
+    token: token ?? undefined,
+    units: units ?? undefined,
     Pin: tx.Pin ?? tx.pin,
     purchased_code: tx.purchased_code ?? tx.purchasedCode,
-    createdAt: tx.createdAt ?? tx.created_at ?? new Date().toISOString(),
+    createdAt: tx.created_at ?? tx.createdAt ?? new Date().toISOString(),
   }
 }
 
@@ -239,34 +295,60 @@ export const walletService = {
   getTransactions: async (page = 0, size = 50, type?: string): Promise<TransactionPage> => {
     const params = new URLSearchParams({ page: String(page), size: String(size) })
     if (type) params.set('type', type)
+       try {
+    const r = await api.get<any>(`/transaction/history?${params}`)
+    const raw = r.data
 
-    try {
-      const r = await api.get<{ success?: boolean; data?: TransactionPage } | TransactionPage>(
-        `/transaction/history?${params}`
-      )
-      const rawData = r.data as any
-      const innerData = (rawData.success !== undefined && rawData.data) ? rawData.data : rawData
+    // Unwrap: { success, data: {...} }  OR  { transactions: {...} }  OR  {...}
+    let inner: any
+    if (raw?.success !== undefined && raw.data) inner = raw.data
+    else if (raw?.transactions) inner = raw.transactions
+    else inner = raw
 
-      const rawContent = innerData.content ?? innerData.data ?? []
-      const content = Array.isArray(rawContent) ? rawContent.map(toTransaction) : []
-      const totalElements = innerData.totalElements ?? innerData.total ?? 0
-      const totalPages = innerData.totalPages ?? innerData.last_page ?? 0
-      const number = innerData.number ?? innerData.current_page ?? 0
+    const rawContent: any[] =
+      inner?.data ??          // ← Laravel pagination uses .data
+      inner?.content ??
+      (Array.isArray(inner) ? inner : [])
 
-      const page_data: TransactionPage = {
-        content,
-        totalElements,
-        totalPages,
-        number,
-      }
+    const content = rawContent.map(toTransaction)
+    const totalElements = inner?.total ?? inner?.totalElements ?? content.length
+    const totalPages    = inner?.last_page ?? inner?.totalPages ?? 1
+    const number        = (inner?.current_page ?? inner?.number ?? 1) - 1
 
-      // Persist to encrypted IndexedDB for offline access
-      if (page_data.content?.length) {
-        saveTransactions(page_data.content).catch(() => undefined) // fire-and-forget
-      }
+    const pageData: TransactionPage = { content, totalElements, totalPages, number }
 
-      return page_data
-    } catch (err) {
+    if (pageData.content.length) saveTransactions(pageData.content).catch(() => undefined)
+    return pageData
+  }
+
+    // try {
+    //   const r = await api.get<{ success?: boolean; data?: TransactionPage } | TransactionPage>(
+    //     `/transaction/history?${params}`
+    //   )
+    //   const rawData = r.data as any
+    //   const innerData = (rawData.success !== undefined && rawData.data) ? rawData.data : rawData
+
+    //   const rawContent = innerData.content ?? innerData.data ?? []
+    //   const content = Array.isArray(rawContent) ? rawContent.map(toTransaction) : []
+    //   const totalElements = innerData.totalElements ?? innerData.total ?? 0
+    //   const totalPages = innerData.totalPages ?? innerData.last_page ?? 0
+    //   const number = innerData.number ?? innerData.current_page ?? 0
+
+    //   const page_data: TransactionPage = {
+    //     content,
+    //     totalElements,
+    //     totalPages,
+    //     number,
+    //   }
+
+    //   // Persist to encrypted IndexedDB for offline access
+    //   if (page_data.content?.length) {
+    //     saveTransactions(page_data.content).catch(() => undefined) // fire-and-forget
+    //   }
+
+    //   return page_data
+    // } 
+    catch (err) {
       // Network / server failure → serve from encrypted local cache
       const cached = await loadTransactions()
       if (cached.length > 0) {
