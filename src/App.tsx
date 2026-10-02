@@ -67,6 +67,14 @@ function RequireAuth() {
   const { isAuthenticated, kycCompleted, pinCreated, kycDeferred, _hasHydrated } = useAuthStore()
   const { pathname } = useLocation()
 
+  // ⬇️ Gateway return: never block, never splash-redirect.
+  // The callback screen itself will hit the webhook; if the session is dead
+  // it will navigate the user to login on its own.
+  if (pathname.startsWith('/payments/callback')) {
+    if (!_hasHydrated) return null    // still wait for auth state to restore
+    return <Outlet />
+  }
+
   // In dev, root opens the launchpad so engineers can jump between apps quickly.
   if (import.meta.env.DEV && pathname === '/') return <Navigate to="/dev/launchpad" replace />
 
@@ -123,8 +131,7 @@ const router = createBrowserRouter([
       { path: '/auth/login',     element: <LoginScreen /> },
       { path: '/auth/otp',       element: <OtpScreen /> },
       { path: '/auth/pin',       element: <CreatePinScreen /> },
-        { path: '/payments/callback',   element: <PaymentCallbackScreen /> },
-
+      { path: '/payments/callback',   element: <PaymentCallbackScreen /> },
       {
         path: '/',
         element: <RequireAuth />,

@@ -1,11 +1,14 @@
 import { useState } from 'react'
+import { useFormik } from 'formik'
+import * as Yup from 'yup'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { XMarkIcon, ChevronLeftIcon } from '@heroicons/react/24/outline'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { Input } from '@/components/ui/Input'
+import { SelfieCapture } from '@/components/ui/SelfieCapture'
 import { walletService, type CreateWalletPayload } from '@/lib/services/wallet.service'
-import { formatDateToDDMMYYYY, generateTransactionRef } from '@/lib/utils'
+import { cn, formatDateToDDMMYYYY, generateTransactionRef } from '@/lib/utils'
 import toast from 'react-hot-toast'
 
 interface CreateWalletModalProps {
@@ -13,119 +16,146 @@ interface CreateWalletModalProps {
   onClose: () => void
 }
 
+// ─── Validation schema (mirrors KycStepper's profileSchema) ─────────────
+const profileSchema = Yup.object({
+  lastName: Yup.string().trim().required('Last name is required'),
+  otherNames: Yup.string().trim().required('Other names are required'),
+  dateOfBirth: Yup.string().required('Date of birth is required'),
+  gender: Yup.number().oneOf([1, 2]).required('Gender is required'),
+  placeOfBirth: Yup.string().trim().required('Place of birth is required'),
+  accountName: Yup.string().trim().required('Account name is required'),
+  bvn: Yup.string()
+    .matches(/^\d{11}$/, 'BVN must be exactly 11 digits')
+    .required('BVN is required'),
+  nin: Yup.string()
+    .matches(/^\d{11}$/, 'NIN must be exactly 11 digits')
+    .required('NIN is required'),
+  phoneNo: Yup.string()
+    .matches(/^\d{10,15}$/, 'Enter a valid phone number')
+    .required('Phone number is required'),
+  email: Yup.string().email('Enter a valid email').required('Email is required'),
+  address: Yup.string().trim().required('Address is required'),
+  nextOfKinName: Yup.string().trim().required('Next of kin name is required'),
+  nextOfKinPhoneNo: Yup.string()
+    .matches(/^\d{10,15}$/, 'Enter a valid phone number')
+    .required('Next of kin phone is required'),
+})
+
+type ProfileFormValues = Yup.InferType<typeof profileSchema>
+
+const INITIAL_VALUES: ProfileFormValues = {
+  lastName: '',
+  otherNames: '',
+  dateOfBirth: '',
+  gender: 1,
+  placeOfBirth: '',
+  accountName: '',
+  bvn: '',
+  nin: '',
+  phoneNo: '',
+  email: '',
+  address: '',
+  nextOfKinName: '',
+  nextOfKinPhoneNo: '',
+}
+
+// Fields validated per sub-step (same shape as KycStepper)
+const SUB_STEP_FIELDS: Record<1 | 2 | 3, (keyof ProfileFormValues)[]> = {
+  1: ['lastName', 'otherNames', 'dateOfBirth', 'gender', 'placeOfBirth', 'accountName', 'bvn', 'nin'],
+  2: ['phoneNo', 'email', 'address'],
+  3: ['nextOfKinName', 'nextOfKinPhoneNo'],
+}
+
 export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
   const queryClient = useQueryClient()
-  const [step, setStep] = useState(1)
-  // Separate file from the rest since it's not a string
+  const [step, setStep] = useState<1 | 2 | 3>(1)
   const [imageFile, setImageFile] = useState<File | null>(null)
-
-  // ninUserId is NOT part of the form state — it is derived from `nin` at submit time.
-  const [formData, setFormData] = useState<Omit<CreateWalletPayload, 'image' | 'ninUserId'>>({
-    bvn: '',
-    nin: '',
-    accountName: '',
-    dateOfBirth: '',
-    gender: 1,
-    lastName: '',
-    otherNames: '',
-    phoneNo: '',
-    transactionTrackingRef: generateTransactionRef(),
-    placeOfBirth: '',
-    address: '',
-    nextOfKinPhoneNo: '',
-    nextOfKinName: '',
-    email: '',
-  })
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
 
   const { mutate, isPending } = useMutation({
     mutationFn: (data: CreateWalletPayload) => walletService.createWallet(data),
-    onSuccess: () => {
-      toast.success('Wallet created successfully!')
+    onSuccess: (data: any) => {
+      toast.success(data?.message ?? 'Wallet created successfully!')
       queryClient.invalidateQueries({ queryKey: ['wallet'] })
+      resetAll()
       onClose()
-      resetForm()
-      setStep(1)
     },
     onError: (error: any) => {
-      toast.error(error?.message || 'Failed to create wallet')
+      const msg =
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to create wallet'
+      toast.error(msg)
     },
   })
 
-  const resetForm = () => {
-    setFormData({
-      bvn: '',
-      nin: '',
-      accountName: '',
-      dateOfBirth: '',
-      gender: 1,
-      lastName: '',
-      otherNames: '',
-      phoneNo: '',
-      transactionTrackingRef: generateTransactionRef(),
-      placeOfBirth: '',
-      address: '',
-      nextOfKinPhoneNo: '',
-      nextOfKinName: '',
-      email: '',
-    })
+  const formik = useFormik<ProfileFormValues>({
+    initialValues: INITIAL_VALUES,
+    validationSchema: profileSchema,
+    validateOnChange: true,
+    validateOnBlur: true,
+    onSubmit: (values) => {
+      if (!imageFile) {
+        toast.error('Please capture your identity photo')
+        setStep(1)
+        return
+      }
+
+      const formattedDob = formatDateToDDMMYYYY(values.dateOfBirth)
+      if (!formattedDob) {
+        toast.error('Please enter a valid date of birth')
+        return
+      }
+
+      const ninDigits = values.nin.replace(/\D/g, '')
+      const derivedNinUserId = `NINUSR-${ninDigits.slice(-4)}`
+
+      mutate({
+        ...values,
+        dateOfBirth: formattedDob,
+        ninUserId: derivedNinUserId,
+        transactionTrackingRef: generateTransactionRef(),
+        image: imageFile,
+      } as CreateWalletPayload)
+    },
+  })
+
+  const resetAll = () => {
+    formik.resetForm()
     setImageFile(null)
+    setImagePreview(null)
+    setStep(1)
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (!imageFile) {
-      toast.error('Please upload an image')
+  const goNextSubStep = async () => {
+    if (step === 1 && !imageFile) {
+      toast.error('Please capture your identity photo to continue')
       return
     }
-
-    const formattedDob = formatDateToDDMMYYYY(formData.dateOfBirth)
-    if (!formattedDob) {
-      toast.error('Please enter a valid date of birth (dd/mm/yyyy)')
+    const fields = SUB_STEP_FIELDS[step]
+    const errors = await formik.validateForm()
+    const stepErrors = fields.filter(f => errors[f])
+    if (stepErrors.length > 0) {
+      stepErrors.forEach(f => formik.setFieldTouched(f as string, true, false))
+      toast.error('Please fill in all required fields correctly')
       return
     }
-
-    const ninDigits = formData.nin.replace(/\D/g, '')
-    if (ninDigits.length < 4) {
-      toast.error('Please enter a valid NIN')
-      return
-    }
-
-    // Auto-derive ninUserId from last 4 digits of NIN
-    // e.g. NIN "4812791595" -> "NINUSR-1595"
-    const derivedNinUserId = `NINUSR-${ninDigits.slice(-4)}`
-
-    mutate({
-      ...formData,
-      dateOfBirth: formattedDob,
-      ninUserId: derivedNinUserId,
-      image: imageFile,
-    } as CreateWalletPayload, {
-    onSuccess: () => {
-      resetForm()
-    }
-    })
+    setStep(prev => (prev + 1) as 1 | 2 | 3)
   }
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target
-    setFormData(prev => ({
-      ...prev,
-      [name]: name === 'gender' ? Number(value) : value,
-    }))
-  }
+  const goPrevSubStep = () => setStep(prev => (prev - 1) as 1 | 2 | 3)
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] ?? null
-    if (file && file.size > 5 * 1024 * 1024) {
-      toast.error('Image must be under 5MB')
-      return
-    }
-    setImageFile(file)
-  }
-
-  const nextStep = () => setStep(prev => prev + 1)
-  const prevStep = () => setStep(prev => prev - 1)
+  // Convenience binding
+  const field = (name: keyof ProfileFormValues) => ({
+    name,
+    value: formik.values[name] as string | number,
+    onChange: formik.handleChange,
+    onBlur: formik.handleBlur,
+    error:
+      formik.touched[name] && formik.errors[name]
+        ? (formik.errors[name] as string)
+        : undefined,
+  })
 
   if (!isOpen) return null
 
@@ -137,7 +167,7 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
           <div className="flex items-center gap-3">
             {step > 1 && (
               <button
-                onClick={prevStep}
+                onClick={goPrevSubStep}
                 className="p-1 -ml-2 hover:bg-gray-100 rounded-full transition-colors"
               >
                 <ChevronLeftIcon className="w-5 h-5" />
@@ -168,14 +198,12 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
               />
             ))}
           </div>
-          <p className="text-xs text-gray-400 text-center mt-2">
-            Step {step} of 3
-          </p>
+          <p className="text-xs text-gray-400 text-center mt-2">Step {step} of 3</p>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-5">
-          {/* STEP 1: Personal Information */}
+        <form onSubmit={formik.handleSubmit} className="p-5 space-y-5">
+          {/* STEP 1: Personal Info */}
           {step === 1 && (
             <div className="space-y-4">
               <div className="space-y-1">
@@ -183,20 +211,8 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
                   Full Name
                 </label>
                 <div className="grid grid-cols-2 gap-3">
-                  <Input
-                    name="lastName"
-                    value={formData.lastName}
-                    onChange={handleChange}
-                    placeholder="Last Name"
-                    required
-                  />
-                  <Input
-                    name="otherNames"
-                    value={formData.otherNames}
-                    onChange={handleChange}
-                    placeholder="Other Names"
-                    required
-                  />
+                  <Input placeholder="Last Name" {...field('lastName')} />
+                  <Input placeholder="Other Names" {...field('otherNames')} />
                 </div>
               </div>
 
@@ -206,13 +222,18 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
                 </label>
                 <input
                   type="date"
-                  name="dateOfBirth"
-                  value={formData.dateOfBirth}
-                  onChange={handleChange}
                   max={new Date().toISOString().split('T')[0]}
-                  required
                   className="w-full h-[52px] px-4 text-[17px] bg-white rounded-[12px] border border-transparent outline-none shadow-[0_1px_2px_rgba(0,0,0,0.06)] focus:border-brand-primary transition-colors"
+                  {...{
+                    name: 'dateOfBirth',
+                    value: formik.values.dateOfBirth,
+                    onChange: formik.handleChange,
+                    onBlur: formik.handleBlur,
+                  }}
                 />
+                {formik.touched.dateOfBirth && formik.errors.dateOfBirth && (
+                  <p className="text-ios-red text-[13px]">{formik.errors.dateOfBirth}</p>
+                )}
               </div>
 
               <div className="space-y-1">
@@ -221,9 +242,9 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
                 </label>
                 <select
                   name="gender"
-                  value={formData.gender}
-                  onChange={handleChange}
-                  required
+                  value={formik.values.gender}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
                   className="w-full h-[52px] px-4 text-[17px] bg-white rounded-[12px] border border-transparent outline-none shadow-[0_1px_2px_rgba(0,0,0,0.06)] focus:border-brand-primary transition-colors"
                 >
                   <option value={1}>Male</option>
@@ -235,82 +256,64 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
                 <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                   Place of Birth
                 </label>
-                <Input
-                  type="text"
-                  name="placeOfBirth"
-                  value={formData.placeOfBirth}
-                  onChange={handleChange}
-                  placeholder="City / State"
-                  required
-                />
+                <Input placeholder="City / State" {...field('placeOfBirth')} />
               </div>
 
-              {/* Image upload */}
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                  Profile Image
-                </label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileChange}
-                  required
-                  className="w-full text-sm text-gray-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-brand-primary file:text-white file:text-sm file:font-medium hover:file:opacity-90"
-                />
-                {imageFile && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    Selected: {imageFile.name}
-                  </p>
-                )}
-              </div>
-
-              {/* Account Name */}
               <div className="space-y-1">
                 <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                   Account Name
                 </label>
-                <Input
-                  name="accountName"
-                  value={formData.accountName}
-                  onChange={handleChange}
-                  placeholder="Full account name"
-                  required
-                />
+                <Input placeholder="Full account name" {...field('accountName')} />
               </div>
 
-              {/* BVN */}
               <div className="space-y-1">
                 <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                   BVN
                 </label>
                 <Input
-                  name="bvn"
-                  value={formData.bvn}
-                  onChange={handleChange}
                   placeholder="Bank Verification Number"
                   maxLength={11}
-                  required
+                  inputMode="numeric"
+                  {...field('bvn')}
                 />
               </div>
 
-              {/* NIN */}
               <div className="space-y-1">
                 <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                   NIN
                 </label>
                 <Input
-                  name="nin"
-                  value={formData.nin}
-                  onChange={handleChange}
                   placeholder="National Identity Number"
                   maxLength={11}
-                  required
+                  inputMode="numeric"
+                  {...field('nin')}
                 />
-                {formData.nin.replace(/\D/g, '').length >= 4 && (
+                {formik.values.nin.replace(/\D/g, '').length >= 4 && (
                   <p className="text-xs text-gray-400 mt-1">
-                    NIN User ID will be auto-generated
+                    NIN User ID: NINUSR-{formik.values.nin.replace(/\D/g, '').slice(-4)}
                   </p>
                 )}
+              </div>
+
+              {/* Camera instead of file input */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  Identity Photo
+                </label>
+                <p className="text-xs text-gray-400">
+                  Take a clear photo of your face for identity verification.
+                </p>
+                <SelfieCapture
+                  onCapture={(file, previewUrl) => {
+                    setImageFile(file)
+                    setImagePreview(previewUrl)
+                  }}
+                  onClear={() => {
+                    setImageFile(null)
+                    setImagePreview(null)
+                  }}
+                  capturedPreview={imagePreview}
+                />
               </div>
             </div>
           )}
@@ -322,22 +325,12 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
                 <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                   Contact Information
                 </label>
-                <Input
-                  type="tel"
-                  name="phoneNo"
-                  value={formData.phoneNo}
-                  onChange={handleChange}
-                  placeholder="Phone Number"
-                  required
-                />
+                <Input type="tel" placeholder="Phone Number" {...field('phoneNo')} />
                 <Input
                   type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleChange}
                   placeholder="Email Address"
-                  required
                   className="mt-3"
+                  {...field('email')}
                 />
               </div>
 
@@ -345,14 +338,7 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
                 <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                   Residential Address
                 </label>
-                <Input
-                  type="text"
-                  name="address"
-                  value={formData.address}
-                  onChange={handleChange}
-                  placeholder="Street, City, State"
-                  required
-                />
+                <Input placeholder="Street, City, State" {...field('address')} />
               </div>
             </div>
           )}
@@ -364,22 +350,12 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
                 <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                   Next of Kin
                 </label>
-                <Input
-                  type="text"
-                  name="nextOfKinName"
-                  value={formData.nextOfKinName}
-                  onChange={handleChange}
-                  placeholder="Full Name"
-                  required
-                />
+                <Input placeholder="Full Name" {...field('nextOfKinName')} />
                 <Input
                   type="tel"
-                  name="nextOfKinPhoneNo"
-                  value={formData.nextOfKinPhoneNo}
-                  onChange={handleChange}
                   placeholder="Phone Number"
-                  required
                   className="mt-3"
+                  {...field('nextOfKinPhoneNo')}
                 />
               </div>
 
@@ -387,7 +363,7 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
                 <p className="text-sm text-gray-600">
                   By creating a wallet, you agree to our{' '}
                   <a href="#" className="text-brand-primary font-medium">
-                    Terms & Conditions
+                    Terms &amp; Conditions
                   </a>
                 </p>
               </div>
@@ -396,44 +372,33 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
 
           {/* Actions */}
           <div className="flex gap-3 pt-4">
-            {step > 1 ? (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={prevStep}
-                  className="flex-1"
-                >
-                  Back
-                </Button>
-                {step === 3 ? (
-                  <Button
-                    type="submit"
-                    disabled={isPending}
-                    className="flex-1"
-                    style={{ background: 'var(--brand-primary)' }}
-                  >
-                    {isPending ? <Spinner color="white" size="sm" /> : 'Create Wallet'}
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    onClick={nextStep}
-                    className="flex-1"
-                    style={{ background: 'var(--brand-primary)' }}
-                  >
-                    Continue
-                  </Button>
-                )}
-              </>
-            ) : (
+            {step > 1 && (
               <Button
                 type="button"
-                onClick={nextStep}
+                variant="outline"
+                onClick={goPrevSubStep}
+                className="flex-1"
+              >
+                Back
+              </Button>
+            )}
+            {step < 3 ? (
+              <Button
+                type="button"
+                onClick={goNextSubStep}
                 className="flex-1"
                 style={{ background: 'var(--brand-primary)' }}
               >
                 Continue
+              </Button>
+            ) : (
+              <Button
+                type="submit"
+                disabled={isPending}
+                className="flex-1"
+                style={{ background: 'var(--brand-primary)' }}
+              >
+                {isPending ? <Spinner color="white" size="sm" /> : 'Create Wallet'}
               </Button>
             )}
           </div>
@@ -441,9 +406,4 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
       </div>
     </div>
   )
-}
-
-// Helper function
-function cn(...classes: (string | boolean | undefined)[]) {
-  return classes.filter(Boolean).join(' ')
 }

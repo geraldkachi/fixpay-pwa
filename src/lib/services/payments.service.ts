@@ -216,36 +216,33 @@ export const paymentsService = {
     api.post<any>('/payments/alternative/verify', { gateway_reference: gatewayReference })
       .then(r => mapResponse(r.data, 0)),
 
-      // Direct Payfixy initiate — POST /payments/vtpass returns a payment_url
-// to hand off to the gateway widget. NO PIN involved.
-initiateDirect: (payload: { serviceId: string; phone?: string; amount: number }) =>
-  api.post<any>('/payments/vtpass', {
-    service_id:     payload.serviceId,
-    amount_kobo:    Math.round(payload.amount * 100),
-    phone:          payload.phone || '',
-    billers_code:   '',
-    variation_code: '',
-  }).then(r => {
-    const d = r.data?.data || r.data
-    return {
-      ...mapResponse(d, payload.amount),
-      payment_url: d.payment_url,
-      payfixy_reference: d.payfixy_reference,
-      payfixy_access_code: d.payfixy_access_code,
-      message: d.message,
-    }
-  }),
-
-  // POST /payment/webhook?vtpayment_id=<id>   (no body)
-  // Uses the raw axios instance directly because this path lives OUTSIDE the
-  // /api/v1/... prefix that `api` normally prepends, and the backend is on a
-  // different origin (127.0.0.1:8000 vs the Vite dev server on :5173).
-  webhookConfirm: (vtpaymentId: string): Promise<BillPaymentResponse> =>
-    api.post<any>(`/payment/webhook?vtpayment_id=${encodeURIComponent(vtpaymentId)}`, undefined, {
-      baseURL: import.meta.env.VITE_WEBHOOK_BASE_URL || 'http://127.0.0.1:8000/api',
-      headers: { 'Content-Type': 'application/json' },
+  // Direct Payfixy initiate — POST /payments/vtpass returns a payment_url
+  // to hand off to the gateway widget. NO PIN involved.
+  initiateDirect: (payload: { serviceId: string; phone?: string; amount: number }) =>
+    api.post<any>('/payments/vtpass', {
+      service_id: payload.serviceId,
+      amount_kobo: Math.round(payload.amount * 100),
+      phone: payload.phone || '',
+      billers_code: '',
+      variation_code: '',
     }).then(r => {
       const d = r.data?.data || r.data
-      return mapResponse(d, 0)
+      return {
+        ...mapResponse(d, payload.amount),
+        payment_url: d.payment_url,
+        payfixy_reference: d.payfixy_reference,
+        payfixy_access_code: d.payfixy_access_code,
+        message: d.message,
+      }
     }),
+
+  // POST /payment/webhook?vtpayment_id=<id>   (no body)
+  webhookConfirm: (vtpaymentId: string): Promise<{ ok: boolean; message: string }> =>
+    api.post<any>(
+      `/payment/webhook?vtpayment_id=${encodeURIComponent(vtpaymentId)}`,
+      undefined,
+    ).then(r => ({
+      ok: r.data?.status === true,
+      message: r.data?.message ?? '',
+    })),
 }

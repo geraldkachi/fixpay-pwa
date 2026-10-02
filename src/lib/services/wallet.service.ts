@@ -242,7 +242,7 @@ export const walletService = {
 
     try {
       const r = await api.get<{ success?: boolean; data?: TransactionPage } | TransactionPage>(
-        `/wallet/transactions?${params}`
+        `/transaction/history?${params}`
       )
       const rawData = r.data as any
       const innerData = (rawData.success !== undefined && rawData.data) ? rawData.data : rawData
@@ -281,6 +281,51 @@ export const walletService = {
       throw err // cache empty — surface the original error
     }
   },
+  // getTransactions: async (page = 0, size = 50, type?: string): Promise<TransactionPage> => {
+  //   const params = new URLSearchParams({ page: String(page), size: String(size) })
+  //   if (type) params.set('type', type)
+
+  //   try {
+  //     const r = await api.get<{ success?: boolean; data?: TransactionPage } | TransactionPage>(
+  //       `/wallet/transactions?${params}`
+  //     )
+  //     const rawData = r.data as any
+  //     const innerData = (rawData.success !== undefined && rawData.data) ? rawData.data : rawData
+
+  //     const rawContent = innerData.content ?? innerData.data ?? []
+  //     const content = Array.isArray(rawContent) ? rawContent.map(toTransaction) : []
+  //     const totalElements = innerData.totalElements ?? innerData.total ?? 0
+  //     const totalPages = innerData.totalPages ?? innerData.last_page ?? 0
+  //     const number = innerData.number ?? innerData.current_page ?? 0
+
+  //     const page_data: TransactionPage = {
+  //       content,
+  //       totalElements,
+  //       totalPages,
+  //       number,
+  //     }
+
+  //     // Persist to encrypted IndexedDB for offline access
+  //     if (page_data.content?.length) {
+  //       saveTransactions(page_data.content).catch(() => undefined) // fire-and-forget
+  //     }
+
+  //     return page_data
+  //   } catch (err) {
+  //     // Network / server failure → serve from encrypted local cache
+  //     const cached = await loadTransactions()
+  //     if (cached.length > 0) {
+  //       const slice = cached.slice(page * size, page * size + size)
+  //       return {
+  //         content: slice,
+  //         totalElements: cached.length,
+  //         totalPages: Math.ceil(cached.length / size),
+  //         number: page,
+  //       }
+  //     }
+  //     throw err // cache empty — surface the original error
+  //   }
+  // },
 
   /**
    * GET /wallet/transactions/:id
