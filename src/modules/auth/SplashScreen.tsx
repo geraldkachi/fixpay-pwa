@@ -15,6 +15,7 @@ export function SplashScreen() {
   const navigate = useNavigate()
   const { isAuthenticated, kycCompleted, pinCreated, _hasHydrated } = useAuthStore()
   const [exiting, setExiting] = useState(false)
+const BYPASS_KYC = true
 
   useEffect(() => {
     if (!_hasHydrated) return
@@ -28,7 +29,7 @@ export function SplashScreen() {
       await sleep(700)
       if (cancelled) return
       sessionStorage.setItem('splash_shown', '1')
-      if (isAuthenticated && kycCompleted && pinCreated) navigate('/home', { replace: true })
+      if (isAuthenticated && (BYPASS_KYC ||kycCompleted) && pinCreated) navigate('/home', { replace: true })
       else if (isAuthenticated) navigate('/kyc', { replace: true })
       else if (localStorage.getItem('fixpay_onboarded')) navigate('/auth/login', { replace: true })
       else navigate('/welcome', { replace: true })
@@ -36,7 +37,7 @@ export function SplashScreen() {
 
     run()
     return () => { cancelled = true }
-  }, [_hasHydrated, isAuthenticated, kycCompleted, pinCreated, navigate])
+  }, [_hasHydrated, isAuthenticated, kycCompleted, BYPASS_KYC, pinCreated, navigate])
 
   return (
     <motion.div

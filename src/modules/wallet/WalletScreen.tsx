@@ -86,7 +86,7 @@ export function WalletScreen() {
 
   return (
     <div className="flex flex-col bg-[#F2F2F7] min-h-[100dvh] pb-nav">
-      <PageHeader title="Wallet" />
+      <PageHeader title="Transactions" />
 
       {/* Account info card */}
       <div className="mx-4 mt-4 bg-white rounded-[20px] p-5 animate-slide-up shrink-0 shadow-sm border border-black/5">

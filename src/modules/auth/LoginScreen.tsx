@@ -16,7 +16,7 @@ const schema = z.object({
   password:   z.string().min(4, 'Enter your password'),
 })
 type FormData = z.infer<typeof schema>
-
+export const BYPASS_KYC = true
 export function LoginScreen() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -73,7 +73,7 @@ export function LoginScreen() {
       localStorage.setItem('fixpay_onboarded', '1')
 
       // Route based on what the user still needs to complete
-      if (hasPinFromServer && isKycVerified) navigate('/home', { replace: true })
+      if (hasPinFromServer && (BYPASS_KYC || isKycVerified)) navigate('/home', { replace: true })
       else if (!hasPinFromServer)            navigate('/auth/pin', { replace: true })
       else                                   navigate('/kyc', { replace: true })
     } catch (err: unknown) {

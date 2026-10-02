@@ -218,13 +218,14 @@ export const paymentsService = {
 
   // Direct Payfixy initiate — POST /payments/vtpass returns a payment_url
   // to hand off to the gateway widget. NO PIN involved.
-  initiateDirect: (payload: { serviceId: string; phone?: string; amount: number }) =>
+  initiateDirect: (payload: { serviceId: string; phone?: string; amount: number, billersCode?: string, variationCode?: string, paymentMethod: 'payfixy' | 'bank_mandate',  subscriptionType?: 'renew' | 'change' }) =>
     api.post<any>('/payments/vtpass', {
       service_id: payload.serviceId,
       amount_kobo: Math.round(payload.amount * 100),
       phone: payload.phone || '',
-      billers_code: '',
-      variation_code: '',
+      payment_method: payload.paymentMethod,
+      billers_code: payload.billersCode,
+      variation_code: payload.variationCode,
     }).then(r => {
       const d = r.data?.data || r.data
       return {

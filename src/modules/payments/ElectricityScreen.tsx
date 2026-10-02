@@ -16,27 +16,31 @@ import { useTransactionStore } from '@/store/transaction.store'
 import { PinPad } from '@/components/ui/PinPad'
 import { resolveVtpassCode } from '@/lib/vtpass-codes'
 import { PaymentMethodSelector, type PaymentMethod } from '@/components/feature/PaymentMethodSelector'
+import { redirectToPayfixy } from '@/lib/services/payment_redirect'
+import { useAuthStore } from '@/store/auth.store'
+import { toLocalNgPhone } from '@/lib/utils'
 
 const PROVIDERS = [
-  { id: 'ikeja-electric',       label: 'Ikeja Electric',        short: 'IKEDC' },
-  { id: 'eko-electric',         label: 'Eko Electricity',       short: 'EKEDC' },
-  { id: 'abuja-electric',       label: 'Abuja Electric',        short: 'AEDC' },
-  { id: 'kano-electric',        label: 'Kano Electricity',      short: 'KEDCO' },
-  { id: 'enugu-electric',       label: 'Enugu Electric',        short: 'EEDC' },
-  { id: 'ibadan-electric',      label: 'Ibadan Electric',       short: 'IBEDC' },
-  { id: 'phed',                 label: 'Port Harcourt Elec.',   short: 'PHED' },
-  { id: 'benin-electric',       label: 'Benin Electricity',     short: 'BEDC' },
-  { id: 'kaduna-electric',      label: 'Kaduna Electric',       short: 'KAEDCO' },
-  { id: 'jos-electric',         label: 'Jos Electricity',       short: 'JED' },
-  { id: 'aba-electric',         label: 'Aba Electricity',       short: 'ABA' },
-  { id: 'yola-electric',        label: 'Yola Electricity',      short: 'YEDC' },
+  { id: 'ikeja-electric', label: 'Ikeja Electric', short: 'IKEDC' },
+  { id: 'eko-electric', label: 'Eko Electricity', short: 'EKEDC' },
+  { id: 'abuja-electric', label: 'Abuja Electric', short: 'AEDC' },
+  { id: 'kano-electric', label: 'Kano Electricity', short: 'KEDCO' },
+  { id: 'enugu-electric', label: 'Enugu Electric', short: 'EEDC' },
+  { id: 'ibadan-electric', label: 'Ibadan Electric', short: 'IBEDC' },
+  { id: 'phed', label: 'Port Harcourt Elec.', short: 'PHED' },
+  { id: 'benin-electric', label: 'Benin Electricity', short: 'BEDC' },
+  { id: 'kaduna-electric', label: 'Kaduna Electric', short: 'KAEDCO' },
+  { id: 'jos-electric', label: 'Jos Electricity', short: 'JED' },
+  { id: 'aba-electric', label: 'Aba Electricity', short: 'ABA' },
+  { id: 'yola-electric', label: 'Yola Electricity', short: 'YEDC' },
 ]
 
 const schema = z.object({
-  serviceId:     z.string().min(1),
-  billersCode:   z.string().min(10, 'Enter meter number').max(15),
+  serviceId: z.string().min(1),
+  billersCode: z.string().min(10, 'Enter meter number').max(15),
   variationCode: z.enum(['prepaid', 'postpaid']),
-  amount:        z.coerce.number().min(500, 'Minimum ₦500'),
+  amount: z.coerce.number().min(500, 'Minimum ₦500'),
+  phone: z.string().min(6, 'Enter a phone number'),
 })
 type FormData = z.infer<typeof schema>
 
@@ -53,10 +57,12 @@ export function ElectricityScreen() {
   const { isProcessing, startProcessing, stopProcessing } = useTransactionStore()
 
   const AMOUNTS = [500, 1000, 2000, 5000, 10000]
-
+  const userPhone = useAuthStore(s => s.user?.phone ?? '')
+  console.log(userPhone)
+const defaultPhone = toLocalNgPhone(userPhone)
   const { register, handleSubmit, setValue, watch, formState: { errors }, getValues } = useForm<FormData>({
     resolver: zodResolver(schema) as Resolver<FormData>,
-    defaultValues: { serviceId: 'ikeja-electric', billersCode: '', variationCode: 'prepaid', amount: 0 },
+    defaultValues: { serviceId: 'ikeja-electric', billersCode: '', variationCode: 'prepaid', amount: 0, phone: defaultPhone, },
   })
   const serviceId = watch('serviceId')
   const variationCode = watch('variationCode')
@@ -73,56 +79,110 @@ export function ElectricityScreen() {
       setVerifyError('Meter not found. (Demo prepaid: 1111111111111, postpaid: 1010101010101)')
     } finally { setVerifying(false) }
   }
-
   const onSubmit = async (data: FormData) => {
     setPending(data)
+
+    // Wallet → PIN sheet
     if (paymentMethod === 'wallet') {
       setPin('')
       setPinError('')
       setShowPin(true)
-    } else {
-      startProcessing()
-      try {
-        const initRes = await paymentsService.alternativeInitiate({
-          paymentMethod,
-          serviceId: data.serviceId,
-          billersCode: data.billersCode,
-          variationCode: data.variationCode,
-          amount: data.amount,
-        })
-        
-        await new Promise(resolve => setTimeout(resolve, 2000))
-        const res = await paymentsService.alternativeVerify(initRes.gateway_reference)
-        
-        queryClient.invalidateQueries({ queryKey: ['wallet'] })
-        queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      return
+    }
 
-        const outcome = resolveVtpassCode(res.vtpass_code)
-        const statePayload = {
-          type: 'electricity',
-          provider: data.serviceId,
-          customerName: verifyResult?.customerName,
-          meter: data.billersCode,
-          meterType: data.variationCode,
-          amount_kobo: res.amount_kobo,
-          token: res.token,
-          units: res.units,
-          requestId: res.payment_reference,
-          date: new Date().toISOString(),
-        }
+    // Payfixy / Bank Mandate → initiateDirect, redirect to payment_url
+    startProcessing()
+    try {
+      const res = await paymentsService.initiateDirect({
+        serviceId: data.serviceId,
+        billersCode: data.billersCode,
+        variationCode: data.variationCode,
+        amount: data.amount,
+        phone: defaultPhone,
+        paymentMethod,
+      })
 
-        if (res.status === 'pending' || outcome.isPending) {
-          navigate('/payments/pending', { state: statePayload })
-        } else {
-          navigate('/payments/receipt', { state: statePayload })
-        }
-      } catch (err: any) {
-        alert(err?.response?.data?.message || 'Payment failed. Try again.')
-      } finally {
-        stopProcessing()
+      const statePayload = {
+        type: 'electricity',
+        provider: data.serviceId,
+        customerName: verifyResult?.customerName,
+        meter: data.billersCode,
+        meterType: data.variationCode,
+        amount_kobo: data.amount * 100,           // ← derive locally, not res.amount_kobo
+        // payment_reference: res.requestId,
+        token: res.token,
+        units: res.units,
+        payfixy_reference: res.payfixy_reference,
+        requestId: res.payment_reference,
+        payment_method: paymentMethod,
+        date: new Date().toISOString(),
       }
+
+      if (res.payment_url) {
+        redirectToPayfixy(res.payment_url, statePayload)
+        return // page is navigating away
+      }
+
+      // No payment_url → fall back to pending screen
+      navigate('/payments/pending', {
+        state: { ...statePayload, requestId: res.requestId },
+      })
+    } catch (err: any) {
+      // toastApiError(err, 'Payment failed. Try again.')
+    } finally {
+      stopProcessing()
     }
   }
+
+  // const onSubmit = async (data: FormData) => {
+  //   setPending(data)
+  //   if (paymentMethod === 'wallet') {
+  //     setPin('')
+  //     setPinError('')
+  //     setShowPin(true)
+  //   } else {
+  //     startProcessing()
+  //     try {
+  //       const initRes = await paymentsService.alternativeInitiate({
+  //         paymentMethod,
+  //         serviceId: data.serviceId,
+  //         billersCode: data.billersCode,
+  //         variationCode: data.variationCode,
+  //         amount: data.amount,
+  //       })
+
+  //       await new Promise(resolve => setTimeout(resolve, 2000))
+  //       const res = await paymentsService.alternativeVerify(initRes.gateway_reference)
+
+  //       queryClient.invalidateQueries({ queryKey: ['wallet'] })
+  //       queryClient.invalidateQueries({ queryKey: ['transactions'] })
+
+  //       const outcome = resolveVtpassCode(res.vtpass_code)
+  //       const statePayload = {
+  //         type: 'electricity',
+  //         provider: data.serviceId,
+  //         customerName: verifyResult?.customerName,
+  //         meter: data.billersCode,
+  //         meterType: data.variationCode,
+  //         amount_kobo: res.amount_kobo,
+  //         token: res.token,
+  //         units: res.units,
+  //         requestId: res.payment_reference,
+  //         date: new Date().toISOString(),
+  //       }
+
+  //       if (res.status === 'pending' || outcome.isPending) {
+  //         navigate('/payments/pending', { state: statePayload })
+  //       } else {
+  //         navigate('/payments/receipt', { state: statePayload })
+  //       }
+  //     } catch (err: any) {
+  //       alert(err?.response?.data?.message || 'Payment failed. Try again.')
+  //     } finally {
+  //       stopProcessing()
+  //     }
+  //   }
+  // }
 
   const handlePinChange = async (val: string) => {
     setPin(val); setPinError('')
@@ -182,6 +242,14 @@ export function ElectricityScreen() {
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
+          <Input
+            label="Phone Number"
+            type="tel"
+            inputMode="tel"
+            placeholder="08012345678"
+            error={errors.phone?.message}
+            {...register('phone')}
+          />
           {/* Meter type */}
           <div className="flex bg-white rounded-[12px] p-1 gap-1 shadow-sm">
             {(['prepaid', 'postpaid'] as const).map(t => (
@@ -221,7 +289,7 @@ export function ElectricityScreen() {
               {AMOUNTS.map(a => (
                 <button key={a} type="button" onClick={() => setValue('amount', a)}
                   className="py-2 bg-white rounded-[12px] text-[12px] font-semibold text-gray-700 pressable shadow-sm">
-                  {a >= 1000 ? `${a/1000}k` : a}
+                  {a >= 1000 ? `${a / 1000}k` : a}
                 </button>
               ))}
             </div>

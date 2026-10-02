@@ -18,6 +18,9 @@ import { PinPad } from '@/components/ui/PinPad'
 import { Spinner } from '@/components/ui/Spinner'
 import { resolveVtpassCode } from '@/lib/vtpass-codes'
 import { PaymentMethodSelector, type PaymentMethod } from '@/components/feature/PaymentMethodSelector'
+import { toLocalNgPhone } from '@/lib/utils'
+import { useAuthStore } from '@/store/auth.store'
+import { redirectToPayfixy } from '@/lib/services/payment_redirect'
 
 const parseAmount = (amt: string | number | undefined | null): number => {
   if (!amt) return 0;
@@ -52,6 +55,9 @@ export function TvScreen() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('wallet')
   const { isProcessing, startProcessing, stopProcessing } = useTransactionStore()
 
+  const userPhone = useAuthStore(s => s.user?.phone ?? '')
+  const defaultPhone = toLocalNgPhone(userPhone)
+
   const { register, handleSubmit, setValue, watch, formState: { errors }, getValues } = useForm<FormData>({
     resolver: zodResolver(schema) as Resolver<FormData>,
     defaultValues: { serviceId: 'dstv', billersCode: '', variationCode: '', subscriptionType: 'renew' },
@@ -80,107 +86,234 @@ export function TvScreen() {
   }
 
   const onSubmit = async (data: FormData) => {
-    setPending(data)
-    if (paymentMethod === 'wallet') {
-      setPin('')
-      setPinError('')
-      setShowPin(true)
-    } else {
-      startProcessing()
-      try {
-        const chosenAmountNaira = parseAmount(chosen?.variationAmount ?? (chosen as any)?.variation_amount ?? '0')
-        const amount = subscriptionType === 'renew'
-          ? (verifyResult?.renewalAmount ?? chosenAmountNaira)
-          : chosenAmountNaira
+  setPending(data)
 
-        const initRes = await paymentsService.alternativeInitiate({
-          paymentMethod,
-          serviceId: data.serviceId,
-          billersCode: data.billersCode,
-          variationCode: data.variationCode,
-          subscriptionType: data.subscriptionType,
-          amount,
-        })
-        
-        await new Promise(resolve => setTimeout(resolve, 2000))
-        const res = await paymentsService.alternativeVerify(initRes.gateway_reference)
-        
-        queryClient.invalidateQueries({ queryKey: ['wallet'] })
-        queryClient.invalidateQueries({ queryKey: ['transactions'] })
-
-        const outcome = resolveVtpassCode(res.vtpass_code)
-        const statePayload = {
-          type: 'tv',
-          provider: data.serviceId,
-          customerName: verifyResult?.customerName,
-          smartcard: data.billersCode,
-          package: chosen?.name ?? 'Renewal',
-          amount_kobo: res.amount_kobo,
-          requestId: res.payment_reference,
-          date: new Date().toISOString(),
-        }
-
-        if (res.status === 'pending' || outcome.isPending) {
-          navigate('/payments/pending', { state: statePayload })
-        } else {
-          navigate('/payments/receipt', { state: statePayload })
-        }
-      } catch (err: any) {
-        alert(err?.response?.data?.message || 'Payment failed. Try again.')
-      } finally {
-        stopProcessing()
-      }
-    }
+  // Wallet → PIN sheet
+  if (paymentMethod === 'wallet') {
+    setPin('')
+    setPinError('')
+    setShowPin(true)
+    return
   }
+
+  // Payfixy / Bank Mandate → initiateDirect, redirect to payment_url
+  startProcessing()
+  try {
+    const chosenAmountNaira = parseAmount(
+      chosen?.variationAmount ?? (chosen as any)?.variation_amount ?? '0'
+    )
+    const amount = subscriptionType === 'renew'
+      ? (verifyResult?.renewalAmount ?? chosenAmountNaira)
+      : chosenAmountNaira
+
+    // Pick a phone for the payload: ShowMax uses billersCode as phone,
+    // others fall back to the auth-store phone.
+    const phone = isShowMax
+      ? toLocalNgPhone(data.billersCode)
+      : toLocalNgPhone(defaultPhone)
+
+    const res = await paymentsService.initiateDirect({
+      serviceId:        data.serviceId,
+      billersCode:      data.billersCode,
+      variationCode:    data.variationCode,
+      subscriptionType: data.subscriptionType,
+      amount,
+      paymentMethod,
+      phone,
+    })
+
+    const statePayload = {
+      type: 'tv',
+      provider: data.serviceId,
+      customerName: verifyResult?.customerName,
+      smartcard: data.billersCode,
+      package: chosen?.name ?? 'Renewal',
+      phone,
+      amount_kobo: amount * 100,
+      // payment_reference: res.requestId,
+      requestId: res.payment_reference,
+      payfixy_reference: res.payfixy_reference,
+      payment_method: paymentMethod,
+      date: new Date().toISOString(),
+    }
+
+    if (res.payment_url) {
+      redirectToPayfixy(res.payment_url, statePayload)
+      return
+    }
+
+    navigate('/payments/pending', {
+      state: { ...statePayload, requestId: res.payment_reference },
+    })
+  } catch (err: any) {
+    // toastApiError(err, 'Payment failed. Try again.')
+  } finally {
+    stopProcessing()
+  }
+}
+
+  // const onSubmit = async (data: FormData) => {
+  //   setPending(data)
+  //   if (paymentMethod === 'wallet') {
+  //     setPin('')
+  //     setPinError('')
+  //     setShowPin(true)
+  //   } else {
+  //     startProcessing()
+  //     try {
+  //       const chosenAmountNaira = parseAmount(chosen?.variationAmount ?? (chosen as any)?.variation_amount ?? '0')
+  //       const amount = subscriptionType === 'renew'
+  //         ? (verifyResult?.renewalAmount ?? chosenAmountNaira)
+  //         : chosenAmountNaira
+
+  //       const initRes = await paymentsService.alternativeInitiate({
+  //         paymentMethod,
+  //         serviceId: data.serviceId,
+  //         billersCode: data.billersCode,
+  //         variationCode: data.variationCode,
+  //         subscriptionType: data.subscriptionType,
+  //         amount,
+  //       })
+        
+  //       await new Promise(resolve => setTimeout(resolve, 2000))
+  //       const res = await paymentsService.alternativeVerify(initRes.gateway_reference)
+        
+  //       queryClient.invalidateQueries({ queryKey: ['wallet'] })
+  //       queryClient.invalidateQueries({ queryKey: ['transactions'] })
+
+  //       const outcome = resolveVtpassCode(res.vtpass_code)
+  //       const statePayload = {
+  //         type: 'tv',
+  //         provider: data.serviceId,
+  //         customerName: verifyResult?.customerName,
+  //         smartcard: data.billersCode,
+  //         package: chosen?.name ?? 'Renewal',
+  //         amount_kobo: res.amount_kobo,
+  //         requestId: res.payment_reference,
+  //         date: new Date().toISOString(),
+  //       }
+
+  //       if (res.status === 'pending' || outcome.isPending) {
+  //         navigate('/payments/pending', { state: statePayload })
+  //       } else {
+  //         navigate('/payments/receipt', { state: statePayload })
+  //       }
+  //     } catch (err: any) {
+  //       alert(err?.response?.data?.message || 'Payment failed. Try again.')
+  //     } finally {
+  //       stopProcessing()
+  //     }
+  //   }
+  // }
 
   const handlePinChange = async (val: string) => {
-    setPin(val); setPinError('')
-    if (val.length < 4 || !pending || isProcessing) return
-    startProcessing()
-    try {
-      await authService.verifyPin(val)
-      // Always resolve a non-zero amount: renew uses verify result price, change uses variation price
-      const chosenAmountNaira = parseAmount(chosen?.variationAmount ?? (chosen as any)?.variation_amount ?? '0')
-      const amount = subscriptionType === 'renew'
-        ? (verifyResult?.renewalAmount ?? chosenAmountNaira)
-        : chosenAmountNaira
-      const res = await paymentsService.tv({
-        serviceId: pending.serviceId,
-        billersCode: pending.billersCode,
-        variationCode: pending.variationCode,
-        subscriptionType: pending.subscriptionType,
-        amount,
-      })
-      queryClient.invalidateQueries({ queryKey: ['wallet'] })
-      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+  setPin(val); setPinError('')
+  if (val.length < 4 || !pending || isProcessing) return
+  startProcessing()
+  try {
+    await authService.verifyPin(val)
 
-      const outcome = resolveVtpassCode(res.vtpass_code)
-      const statePayload = {
-        type: 'tv',
-        provider: serviceId,
-        customerName: verifyResult?.customerName,
-        smartcard: pending.billersCode,
-        package: chosen?.name ?? 'Renewal',
-        amount_kobo: res.amount_kobo,
-        requestId: res.payment_reference,
-        date: new Date().toISOString(),
-      }
+    const chosenAmountNaira = parseAmount(
+      chosen?.variationAmount ?? (chosen as any)?.variation_amount ?? '0'
+    )
+    const amount = pending.subscriptionType === 'renew'
+      ? (verifyResult?.renewalAmount ?? chosenAmountNaira)
+      : chosenAmountNaira
 
-      if (res.status === 'pending' || outcome.isPending) {
-        navigate('/payments/pending', { state: statePayload })
-      } else {
-        navigate('/payments/receipt', { state: statePayload })
-      }
-    } catch (err: any) {
-      const code = err?.response?.data?.vtpass_code || err?.response?.data?.provider_code
-      const outcome = resolveVtpassCode(code)
-      const serverMsg = err?.response?.data?.message || (code ? `${outcome.message} (${code})` : 'Service not available at this time. Please try again later.')
-      setPinError(serverMsg)
-      setPin('')
-    } finally {
-      stopProcessing()
+    const phone = isShowMax
+      ? toLocalNgPhone(pending.billersCode)
+      : toLocalNgPhone(defaultPhone)
+
+    const res = await paymentsService.tv({
+      serviceId:        pending.serviceId,
+      billersCode:      pending.billersCode,
+      variationCode:    pending.variationCode,
+      subscriptionType: pending.subscriptionType,
+      amount,
+      // phone,
+    })
+    queryClient.invalidateQueries({ queryKey: ['wallet'] })
+    queryClient.invalidateQueries({ queryKey: ['transactions'] })
+
+    const outcome = resolveVtpassCode(res.vtpass_code)
+    const statePayload = {
+      type: 'tv',
+      provider: pending.serviceId,
+      customerName: verifyResult?.customerName,
+      smartcard: pending.billersCode,
+      package: chosen?.name ?? 'Renewal',
+      phone,
+      amount_kobo: res.amount_kobo ?? amount * 100,
+      requestId: res.payment_reference,
+      date: new Date().toISOString(),
     }
+
+    if (res.status === 'pending' || outcome.isPending) {
+      navigate('/payments/pending', { state: statePayload })
+    } else {
+      navigate('/payments/receipt', { state: statePayload })
+    }
+  } catch (err: any) {
+    const code = err?.response?.data?.vtpass_code || err?.response?.data?.provider_code
+    const outcome = resolveVtpassCode(code)
+    const serverMsg =
+      err?.response?.data?.message ||
+      (code ? `${outcome.message} (${code})` : 'Service not available at this time. Please try again later.')
+    setPinError(serverMsg)
+    setPin('')
+  } finally {
+    stopProcessing()
   }
+}
+
+  // const handlePinChange = async (val: string) => {
+  //   setPin(val); setPinError('')
+  //   if (val.length < 4 || !pending || isProcessing) return
+  //   startProcessing()
+  //   try {
+  //     await authService.verifyPin(val)
+  //     // Always resolve a non-zero amount: renew uses verify result price, change uses variation price
+  //     const chosenAmountNaira = parseAmount(chosen?.variationAmount ?? (chosen as any)?.variation_amount ?? '0')
+  //     const amount = subscriptionType === 'renew'
+  //       ? (verifyResult?.renewalAmount ?? chosenAmountNaira)
+  //       : chosenAmountNaira
+  //     const res = await paymentsService.tv({
+  //       serviceId: pending.serviceId,
+  //       billersCode: pending.billersCode,
+  //       variationCode: pending.variationCode,
+  //       subscriptionType: pending.subscriptionType,
+  //       amount,
+  //     })
+  //     queryClient.invalidateQueries({ queryKey: ['wallet'] })
+  //     queryClient.invalidateQueries({ queryKey: ['transactions'] })
+
+  //     const outcome = resolveVtpassCode(res.vtpass_code)
+  //     const statePayload = {
+  //       type: 'tv',
+  //       provider: serviceId,
+  //       customerName: verifyResult?.customerName,
+  //       smartcard: pending.billersCode,
+  //       package: chosen?.name ?? 'Renewal',
+  //       amount_kobo: res.amount_kobo,
+  //       requestId: res.payment_reference,
+  //       date: new Date().toISOString(),
+  //     }
+
+  //     if (res.status === 'pending' || outcome.isPending) {
+  //       navigate('/payments/pending', { state: statePayload })
+  //     } else {
+  //       navigate('/payments/receipt', { state: statePayload })
+  //     }
+  //   } catch (err: any) {
+  //     const code = err?.response?.data?.vtpass_code || err?.response?.data?.provider_code
+  //     const outcome = resolveVtpassCode(code)
+  //     const serverMsg = err?.response?.data?.message || (code ? `${outcome.message} (${code})` : 'Service not available at this time. Please try again later.')
+  //     setPinError(serverMsg)
+  //     setPin('')
+  //   } finally {
+  //     stopProcessing()
+  //   }
+  // }
 
   return (
     <div className="flex flex-col h-[100dvh] bg-[#F2F2F7]">
@@ -265,7 +398,14 @@ export function TvScreen() {
 
           <PaymentMethodSelector value={paymentMethod} onChange={setPaymentMethod} disabled={isProcessing} />
 
-          <Button type="submit" fullWidth className="mt-2" disabled={(!isShowMax && !verifyResult) || isProcessing}>
+          <Button type="submit" fullWidth className="mt-2" 
+          // disabled={(!isShowMax && !verifyResult) || isProcessing}
+          disabled={
+            isProcessing ||
+            (isShowMax ? !chosen : !verifyResult) ||
+            (subscriptionType === 'change' && !chosen)
+          }
+          >
             {isShowMax && chosen
               ? `Pay ₦${parseAmount(chosen.variationAmount ?? (chosen as any).variation_amount).toLocaleString()}`
               : verifyResult && subscriptionType === 'renew'

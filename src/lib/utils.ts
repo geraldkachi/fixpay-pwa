@@ -130,3 +130,28 @@ export function formatDateToDDMMYYYY(input: string | Date): string {
 
   return ''
 }
+
+// lib/utils.ts
+export function toLocalNgPhone(raw: string | null | undefined): string {
+  if (!raw) return ''
+  // strip everything except digits
+  const digits = raw.replace(/\D/g, '')
+
+  // +2349011111111 → 2349011111111 → strip leading 234, prefix 0
+  if (digits.startsWith('234') && digits.length === 13) {
+    return '0' + digits.slice(3)          // → 09011111111
+  }
+
+  // 9011111111 → 09011111111
+  if (digits.length === 10 && digits.startsWith('9')) {
+    return '0' + digits
+  }
+
+  // already 09011111111 (11 digits starting with 0)
+  if (digits.length === 11 && digits.startsWith('0')) {
+    return digits
+  }
+
+  // fallback — return what we can, capped at 11 digits
+  return digits.slice(0, 11)
+}

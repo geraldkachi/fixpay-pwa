@@ -17,6 +17,7 @@ import { PinPad } from '@/components/ui/PinPad'
 import { Spinner } from '@/components/ui/Spinner'
 import { resolveVtpassCode } from '@/lib/vtpass-codes'
 import { PaymentMethodSelector, type PaymentMethod } from '@/components/feature/PaymentMethodSelector'
+import { redirectToPayfixy } from '@/lib/services/payment_redirect'
 
 const parseAmount = (amt: string | number | undefined | null): number => {
   if (!amt) return 0;
@@ -71,52 +72,101 @@ export function DataScreen() {
     setValue('amount', amountNaira)
   }
 
+  // const onSubmit = async (data: FormData) => {
+  //   setPending(data)
+  //   if (paymentMethod === 'wallet') {
+  //     setPin('')
+  //     setPinError('')
+  //     setShowPin(true)
+  //   } else {
+  //     startProcessing()
+  //     try {
+  //       const initRes = await paymentsService.alternativeInitiate({
+  //         paymentMethod,
+  //         serviceId: data.serviceId,
+  //         billersCode: data.billersCode,
+  //         variationCode: data.variationCode,
+  //         amount: data.amount,
+  //       })
+        
+  //       await new Promise(resolve => setTimeout(resolve, 2000))
+  //       const res = await paymentsService.alternativeVerify(initRes.gateway_reference)
+        
+  //       queryClient.invalidateQueries({ queryKey: ['wallet'] })
+  //       queryClient.invalidateQueries({ queryKey: ['transactions'] })
+
+  //       const outcome = resolveVtpassCode(res.vtpass_code)
+  //       const statePayload = {
+  //         type: 'data',
+  //         bundle: chosen?.name,
+  //         network: data.serviceId,
+  //         phone: data.billersCode,
+  //         amount_kobo: res.amount_kobo,
+  //         requestId: res.payment_reference,
+  //         date: new Date().toISOString(),
+  //       }
+
+  //       if (res.status === 'pending' || outcome.isPending) {
+  //         navigate('/payments/pending', { state: statePayload })
+  //       } else {
+  //         navigate('/payments/receipt', { state: statePayload })
+  //       }
+  //     } catch (err: any) {
+  //       alert(err?.response?.data?.message || 'Payment failed. Try again.')
+  //     } finally {
+  //       stopProcessing()
+  //     }
+  //   }
+  // }
   const onSubmit = async (data: FormData) => {
-    setPending(data)
-    if (paymentMethod === 'wallet') {
-      setPin('')
-      setPinError('')
-      setShowPin(true)
-    } else {
-      startProcessing()
-      try {
-        const initRes = await paymentsService.alternativeInitiate({
-          paymentMethod,
-          serviceId: data.serviceId,
-          billersCode: data.billersCode,
-          variationCode: data.variationCode,
-          amount: data.amount,
-        })
-        
-        await new Promise(resolve => setTimeout(resolve, 2000))
-        const res = await paymentsService.alternativeVerify(initRes.gateway_reference)
-        
-        queryClient.invalidateQueries({ queryKey: ['wallet'] })
-        queryClient.invalidateQueries({ queryKey: ['transactions'] })
+  setPending(data)
 
-        const outcome = resolveVtpassCode(res.vtpass_code)
-        const statePayload = {
-          type: 'data',
-          bundle: chosen?.name,
-          network: data.serviceId,
-          phone: data.billersCode,
-          amount_kobo: res.amount_kobo,
-          requestId: res.payment_reference,
-          date: new Date().toISOString(),
-        }
-
-        if (res.status === 'pending' || outcome.isPending) {
-          navigate('/payments/pending', { state: statePayload })
-        } else {
-          navigate('/payments/receipt', { state: statePayload })
-        }
-      } catch (err: any) {
-        alert(err?.response?.data?.message || 'Payment failed. Try again.')
-      } finally {
-        stopProcessing()
-      }
-    }
+  // Wallet → PIN sheet
+  if (paymentMethod === 'wallet') {
+    setPin('')
+    setPinError('')
+    setShowPin(true)
+    return
   }
+
+  // Payfixy / Bank Mandate → initiateDirect, then redirect to payment_url
+  startProcessing()
+  try {
+    const res = await paymentsService.initiateDirect({
+      serviceId:     data.serviceId,
+      billersCode:   data.billersCode,
+      variationCode: data.variationCode,
+      phone:         data.billersCode,
+      amount:        data.amount,
+    })
+
+    const statePayload = {
+      type: 'data',
+      bundle: chosen?.name,
+      network: data.serviceId,
+      phone: data.billersCode,
+      amount_kobo: res.amount_kobo,
+      payment_reference: res.payment_reference,
+      payfixy_reference: res.payfixy_reference,
+      payment_method: paymentMethod,
+      date: new Date().toISOString(),
+    }
+
+    if (res.payment_url) {
+      redirectToPayfixy(res.payment_url, statePayload)
+      return // page is navigating away
+    }
+
+    // No payment_url → fall back to pending screen
+    navigate('/payments/pending', {
+      state: { ...statePayload, requestId: res.payment_reference },
+    })
+  } catch (err: any) {
+    alert(err?.response?.data?.message || 'Payment failed. Try again.')
+  } finally {
+    stopProcessing()
+  }
+}
 
   const handlePinChange = async (val: string) => {
     setPin(val); setPinError('')

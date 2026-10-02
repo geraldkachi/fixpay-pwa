@@ -16,6 +16,9 @@ import { PinPad } from '@/components/ui/PinPad'
 import { Spinner } from '@/components/ui/Spinner'
 import { resolveVtpassCode } from '@/lib/vtpass-codes'
 import { PaymentMethodSelector, type PaymentMethod } from '@/components/feature/PaymentMethodSelector'
+import { redirectToPayfixy } from '@/lib/services/payment_redirect'
+import { toLocalNgPhone } from '@/lib/utils'
+import { useAuthStore } from '@/store/auth.store'
 
 const parseAmount = (amt: string | number | undefined | null): number => {
   if (!amt) return 0;
@@ -53,9 +56,13 @@ export function InsuranceScreen() {
   const [submitting, setSubmitting] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('wallet')
 
+  // inside the component:
+const userPhone = useAuthStore(s => s.user?.phone ?? '')
+const defaultPhone = toLocalNgPhone(userPhone)
+
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { serviceId: 'ui-insure', billersCode: '', variationCode: '', phone: '', amount: 0 },
+    defaultValues: { serviceId: 'ui-insure', billersCode: '', variationCode: '', phone: defaultPhone, amount: 0 },
   })
   const serviceId = watch('serviceId')
   const variationCode = watch('variationCode')
@@ -81,94 +88,195 @@ export function InsuranceScreen() {
   }
 
   const onSubmit = async (data: FormData) => {
-    setPending(data)
-    if (paymentMethod === 'wallet') {
-      setPin('')
-      setPinError('')
-      setShowPin(true)
-    } else {
-      setSubmitting(true)
-      try {
-        const initRes = await paymentsService.alternativeInitiate({
-          paymentMethod,
-          serviceId: data.serviceId,
-          billersCode: data.billersCode,
-          variationCode: data.variationCode,
-          phone: data.phone,
-          amount: data.amount,
-        })
-        
-        await new Promise(resolve => setTimeout(resolve, 2000))
-        const res = await paymentsService.alternativeVerify(initRes.gateway_reference)
-        
-        queryClient.invalidateQueries({ queryKey: ['wallet'] })
-        queryClient.invalidateQueries({ queryKey: ['transactions'] })
+  setPending(data)
 
-        const outcome = resolveVtpassCode(res.vtpass_code)
-        const statePayload = {
-          type: 'insurance',
-          serviceId: data.serviceId,
-          exam: chosen?.name,
-          amount_kobo: res.amount_kobo,
-          requestId: res.payment_reference,
-          date: new Date().toISOString(),
-          purchased_code: res.purchased_code,
-        }
-
-        if (res.status === 'pending' || outcome.isPending) {
-          navigate('/payments/pending', { state: statePayload })
-        } else {
-          navigate('/payments/receipt', { state: statePayload })
-        }
-      } catch (err: any) {
-        alert(err?.response?.data?.message || 'Payment failed. Try again.')
-      } finally {
-        setSubmitting(false)
-      }
-    }
+  // Wallet → PIN sheet
+  if (paymentMethod === 'wallet') {
+    setPin('')
+    setPinError('')
+    setShowPin(true)
+    return
   }
+
+  // Payfixy / Bank Mandate → initiateDirect, redirect to payment_url
+  setSubmitting(true)
+  try {
+    const res = await paymentsService.initiateDirect({
+      serviceId:     data.serviceId,
+      billersCode:   data.billersCode,
+      variationCode: data.variationCode,
+      amount:        data.amount,
+      paymentMethod,
+      phone:         data.phone,
+    })
+
+    const statePayload = {
+      type: 'insurance',
+      serviceId: data.serviceId,
+      biller: data.billersCode,               // ← was `exam`
+      phone: data.phone,
+      plan: chosen?.name,
+      amount_kobo: data.amount * 100,         // ← derive locally
+      // payment_reference: res.requestId,
+      requestId: res.payment_reference,             // ← use backend value
+      payfixy_reference: res.payfixy_reference,
+      payment_method: paymentMethod,
+      date: new Date().toISOString(),
+    }
+
+    if (res.payment_url) {
+      redirectToPayfixy(res.payment_url, statePayload)
+      return // page is navigating away
+    }
+
+    // No payment_url → fall back to pending screen
+    navigate('/payments/pending', {
+      state: { ...statePayload, requestId: res.payment_reference },
+    })
+  } catch (err: any) {
+    // toastApiError(err, 'Payment failed. Try again.')
+  } finally {
+    setSubmitting(false)
+  }
+}
+
+  // const onSubmit = async (data: FormData) => {
+  //   setPending(data)
+  //   if (paymentMethod === 'wallet') {
+  //     setPin('')
+  //     setPinError('')
+  //     setShowPin(true)
+  //   } else {
+  //     setSubmitting(true)
+  //     try {
+  //       const initRes = await paymentsService.alternativeInitiate({
+  //         paymentMethod,
+  //         serviceId: data.serviceId,
+  //         billersCode: data.billersCode,
+  //         variationCode: data.variationCode,
+  //         phone: data.phone,
+  //         amount: data.amount,
+  //       })
+        
+  //       await new Promise(resolve => setTimeout(resolve, 2000))
+  //       const res = await paymentsService.alternativeVerify(initRes.gateway_reference)
+        
+  //       queryClient.invalidateQueries({ queryKey: ['wallet'] })
+  //       queryClient.invalidateQueries({ queryKey: ['transactions'] })
+
+  //       const outcome = resolveVtpassCode(res.vtpass_code)
+  //       const statePayload = {
+  //         type: 'insurance',
+  //         serviceId: data.serviceId,
+  //         exam: chosen?.name,
+  //         amount_kobo: res.amount_kobo,
+  //         requestId: res.payment_reference,
+  //         date: new Date().toISOString(),
+  //         purchased_code: res.purchased_code,
+  //       }
+
+  //       if (res.status === 'pending' || outcome.isPending) {
+  //         navigate('/payments/pending', { state: statePayload })
+  //       } else {
+  //         navigate('/payments/receipt', { state: statePayload })
+  //       }
+  //     } catch (err: any) {
+  //       alert(err?.response?.data?.message || 'Payment failed. Try again.')
+  //     } finally {
+  //       setSubmitting(false)
+  //     }
+  //   }
+  // }
 
   const handlePinChange = async (val: string) => {
-    setPin(val); setPinError('')
-    if (val.length < 4 || !pending || submitting) return
-    setSubmitting(true)
-    try {
-      await authService.verifyPin(val)
-      const res = await paymentsService.insurance({
-        serviceId: pending.serviceId,
-        billersCode: pending.billersCode,
-        variationCode: pending.variationCode,
-        phone: pending.phone,
-        amount: pending.amount,
-      })
-      queryClient.invalidateQueries({ queryKey: ['wallet'] })
-      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+  setPin(val); setPinError('')
+  if (val.length < 4 || !pending || submitting) return
+  setSubmitting(true)
+  try {
+    await authService.verifyPin(val)
+    const res = await paymentsService.insurance({
+      serviceId:     pending.serviceId,
+      billersCode:   pending.billersCode,
+      variationCode: pending.variationCode,
+      phone:         pending.phone,
+      amount:        pending.amount,
+    })
+    queryClient.invalidateQueries({ queryKey: ['wallet'] })
+    queryClient.invalidateQueries({ queryKey: ['transactions'] })
 
-      const outcome = resolveVtpassCode(res.vtpass_code)
-      const statePayload = {
-        type: 'insurance',
-        serviceId: pending.serviceId,
-        exam: chosen?.name,
-        amount_kobo: res.amount_kobo,
-        requestId: res.payment_reference,
-        date: new Date().toISOString(),
-        purchased_code: res.purchased_code,
-      }
-
-      if (res.status === 'pending' || outcome.isPending) {
-        navigate('/payments/pending', { state: statePayload })
-      } else {
-        navigate('/payments/receipt', { state: statePayload })
-      }
-    } catch (err: any) {
-      const code = err?.response?.data?.vtpass_code || err?.response?.data?.provider_code
-      const outcome = resolveVtpassCode(code)
-      const serverMsg = err?.response?.data?.message || (code ? `${outcome.message} (${code})` : 'Service not available at this time. Please try again later.')
-      setPinError(serverMsg)
-      setPin('')
-      setSubmitting(false)
+    const outcome = resolveVtpassCode(res.vtpass_code)
+    const statePayload = {
+      type: 'insurance',
+      serviceId: pending.serviceId,
+      biller: pending.billersCode,             // ← was `exam`
+      phone: pending.phone,
+      plan: chosen?.name,
+      amount_kobo: res.amount_kobo,
+      purchased_code: res.purchased_code,
+      requestId: res.payment_reference,
+      date: new Date().toISOString(),
     }
+
+    if (res.status === 'pending' || outcome.isPending) {
+      navigate('/payments/pending', { state: statePayload })
+    } else {
+      navigate('/payments/receipt', { state: statePayload })
+    }
+  } catch (err: any) {
+    const code = err?.response?.data?.vtpass_code || err?.response?.data?.provider_code
+    const outcome = resolveVtpassCode(code)
+    const serverMsg =
+      err?.response?.data?.message ||
+      (code ? `${outcome.message} (${code})` : 'Service not available at this time. Please try again later.')
+    setPinError(serverMsg)
+    setPin('')
+    // setSubmitting(false) removed — `finally` below handles it
+  } finally {
+    setSubmitting(false)
   }
+}
+
+  // const handlePinChange = async (val: string) => {
+  //   setPin(val); setPinError('')
+  //   if (val.length < 4 || !pending || submitting) return
+  //   setSubmitting(true)
+  //   try {
+  //     await authService.verifyPin(val)
+  //     const res = await paymentsService.insurance({
+  //       serviceId: pending.serviceId,
+  //       billersCode: pending.billersCode,
+  //       variationCode: pending.variationCode,
+  //       phone: pending.phone,
+  //       amount: pending.amount,
+  //     })
+  //     queryClient.invalidateQueries({ queryKey: ['wallet'] })
+  //     queryClient.invalidateQueries({ queryKey: ['transactions'] })
+
+  //     const outcome = resolveVtpassCode(res.vtpass_code)
+  //     const statePayload = {
+  //       type: 'insurance',
+  //       serviceId: pending.serviceId,
+  //       exam: chosen?.name,
+  //       amount_kobo: res.amount_kobo,
+  //       requestId: res.payment_reference,
+  //       date: new Date().toISOString(),
+  //       purchased_code: res.purchased_code,
+  //     }
+
+  //     if (res.status === 'pending' || outcome.isPending) {
+  //       navigate('/payments/pending', { state: statePayload })
+  //     } else {
+  //       navigate('/payments/receipt', { state: statePayload })
+  //     }
+  //   } catch (err: any) {
+  //     const code = err?.response?.data?.vtpass_code || err?.response?.data?.provider_code
+  //     const outcome = resolveVtpassCode(code)
+  //     const serverMsg = err?.response?.data?.message || (code ? `${outcome.message} (${code})` : 'Service not available at this time. Please try again later.')
+  //     setPinError(serverMsg)
+  //     setPin('')
+  //     setSubmitting(false)
+  //   }
+  // }
 
   return (
     <div className="flex flex-col h-[100dvh] bg-[#F2F2F7]">

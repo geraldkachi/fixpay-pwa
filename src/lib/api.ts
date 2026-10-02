@@ -121,7 +121,8 @@ export async function serverLogout(): Promise<void> {
     // best-effort — proceed with local cleanup regardless
   }
   // Clear server-authoritative tenant context so a new login starts clean
-  localStorage.removeItem('tenant_slug')
+  localStorage.removeItem('tenant_slug');
+  localStorage.clear();
   purgeDbKey()
   await clearTransactions()
   useAuthStore.getState().logout()
