@@ -38,7 +38,8 @@ export function CreatePinScreen() {
     try {
       await api.post('/auth/pin/set', { pin: val, pin_confirmation: val })
       setPinCreated(true)
-      navigate(kycCompleted ? '/home' : '/kyc', { replace: true })
+      navigate(kycCompleted ? '/home' : '/home', { replace: true })
+      // navigate(kycCompleted ? '/home' : '/kyc', { replace: true })
     } catch {
       setError('Failed to save PIN. Try again.')
     } finally {
