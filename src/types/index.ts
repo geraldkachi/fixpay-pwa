@@ -21,13 +21,13 @@ export type TxType = 'bill_payment' | 'transfer_out' | 'transfer_in' | 'wallet_f
 export type TxStatus = 'initiated' | 'processing' | 'pending' | 'completed' | 'failed' | 'reversed'
 
 export interface Transaction {
-  id: string
-  type: TxType
-  amountKobo: number
-  feeKobo: number
-  status: TxStatus
-  reference: string
-  description: string
+  id?: string
+  type?: TxType
+  amountKobo?: number
+  feeKobo?: number
+  status?: TxStatus
+  reference?: string
+  description?: string
   counterpartyName?: string
   serviceId?: string
   serviceName?: string
@@ -36,6 +36,7 @@ export interface Transaction {
   Pin?: string
   purchased_code?: string
   createdAt: string
+  payment_reference?: string
 }
 
 export interface TenantConfig {

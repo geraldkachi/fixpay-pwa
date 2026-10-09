@@ -10,6 +10,7 @@ import { queryClient } from '@/lib/query-client'
 import { formatCurrency, cn } from '@/lib/utils'
 import { useTransactionStore } from '@/store/transaction.store'
 import { authService } from '@/lib/services/auth.service'
+import { useAuthStore } from '@/store/auth.store'
 
 interface RepeatPaymentBottomSheetProps {
   tx: Transaction | null
@@ -20,6 +21,8 @@ interface RepeatPaymentBottomSheetProps {
 export function RepeatPaymentBottomSheet({ tx, open, onClose }: RepeatPaymentBottomSheetProps) {
   const navigate = useNavigate()
   const { isProcessing, startProcessing, stopProcessing } = useTransactionStore()
+    const { user } = useAuthStore()
+  
 
   const [loadingDetails, setLoadingDetails] = useState(false)
   const [details, setDetails] = useState<any>(null)
@@ -90,7 +93,7 @@ export function RepeatPaymentBottomSheet({ tx, open, onClose }: RepeatPaymentBot
         res = await api.post('/payments/vtpass', {
           service_id: details.service_id,
           amount_kobo: details.amount_kobo,
-          phone: details.phone || '',
+          phone: details.phone || user?.phone || '',
           billers_code: details.billers_code || '',
           variation_code: details.variation_code || '',
         })
@@ -107,7 +110,7 @@ export function RepeatPaymentBottomSheet({ tx, open, onClose }: RepeatPaymentBot
         units: responseData.units,
         pin: responseData.pin,
         customerName: details.account_name || details.customer_name,
-        phone: details.phone,
+        phone: details.phone || user?.phone || '',
         meter: details.meter_number,
         smartcard: details.smartcard_number,
         provider: details.provider_code,
@@ -127,7 +130,7 @@ export function RepeatPaymentBottomSheet({ tx, open, onClose }: RepeatPaymentBot
           date: new Date().toISOString(),
           status: 'FAILED',
           customerName: details.account_name || details.customer_name,
-          phone: details.phone,
+          phone: details.phone || user?.phone || '',
           meter: details.meter_number,
           smartcard: details.smartcard_number,
           provider: details.provider_code,

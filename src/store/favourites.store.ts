@@ -1,15 +1,15 @@
 import { create } from 'zustand'
-import { favouriteService, type FavouritePayload } from '@/lib/services/favourite.service'
+import { favouriteService, type FrequentPayment } from '@/lib/services/favourite.service'
 import type { Transaction } from '@/types'
 
 // Map backend Favourite payload to a frontend Transaction-like object for the UI
-const mapFavouriteToTransaction = (fav: FavouritePayload): Transaction => ({
+const mapFavouriteToTransaction = (fav: FrequentPayment): Transaction => ({
   id: fav.id, // Using the backend favourite ID for the UI
   type: fav.type as Transaction['type'],
   amountKobo: fav.amount_kobo || 0,
   feeKobo: 0,
   status: 'completed',
-  reference: fav.transaction_reference || fav.id,
+  reference: fav.payment_reference,
   description: fav.description || '',
   serviceId: fav.service_id,
   serviceName: fav.service_name,

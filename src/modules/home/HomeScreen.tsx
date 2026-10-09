@@ -107,7 +107,7 @@ export function HomeScreen() {
               return (
                 <div 
                   key={tx.id} 
-                  className="bg-white rounded-[16px] p-4 min-w-[200px] max-w-[200px] shrink-0 cursor-pointer active:scale-95 transition-transform pressable flex flex-col justify-between relative"
+                  className="bg-white rounded-2xl p-4 min-w-50 max-w-50 shrink-0 cursor-pointer active:scale-95 transition-transform pressable flex flex-col justify-between relative"
                   style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}
                   onClick={() => setRepeatTx(tx)}
                 >
@@ -127,7 +127,7 @@ export function HomeScreen() {
                   <div className="flex items-end justify-between mt-auto">
                     <div>
                       <p className="text-[11px] text-gray-400 mb-1">{formatDateShort(tx.createdAt)}</p>
-                      <Badge variant={variant} className="text-[9px] px-1.5 py-0 h-[18px]">{label}</Badge>
+                      <Badge variant={variant} className="text-[9px] px-1.5 py-0 h-4.5">{label}</Badge>
                     </div>
                     <p className="text-[15px] font-bold text-gray-900">{formatCurrency(tx.amountKobo)}</p>
                   </div>
