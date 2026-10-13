@@ -14,7 +14,7 @@ const api = axios.create({
      'Content-Type': 'application/json',
       'Accept': 'application/json',
       "Client-Public": 2,
-			"Client-Secret": 'CdaDN9Q6BZtmTBlMj2j6CsU9uk9IvpWIvHpBHdfx',
+			"Client-Secret": import.meta.env.VITE_CLIENT_SECRET || 'CdaDN9Q6BZtmTBlMj2j6CsU9uk9IvpWIvHpBHdfx',
      },
 })
 
