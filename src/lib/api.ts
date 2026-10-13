@@ -13,6 +13,8 @@ const api = axios.create({
   headers: {
      'Content-Type': 'application/json',
       'Accept': 'application/json',
+      "Client-Public": 2,
+			"Client-Secret": 'CdaDN9Q6BZtmTBlMj2j6CsU9uk9IvpWIvHpBHdfx',
      },
 })
 
