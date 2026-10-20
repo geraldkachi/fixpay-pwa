@@ -48,50 +48,7 @@ export function AirtimeScreen() {
   const selectedNet = watch('serviceId')
   const isInternational = selectedNet === 'foreign-airtime'
 
-  // const onSubmit = async (data: FormData) => {
-  //   setPending(data)
-  //   if (paymentMethod === 'wallet') {
-  //     setPin('')
-  //     setPinError('')
-  //     setShowPin(true)
-  //   } else {
-  //     startProcessing()
-  //     try {
-  //       const initRes = await paymentsService.alternativeInitiate({
-  //         paymentMethod,
-  //         serviceId: data.serviceId,
-  //         phone: data.phone,
-  //         amount: data.amount,
-  //       })
-        
-  //       await new Promise(resolve => setTimeout(resolve, 2000))
-  //       const res = await paymentsService.alternativeVerify(initRes.gateway_reference)
-        
-  //       queryClient.invalidateQueries({ queryKey: ['wallet'] })
-  //       queryClient.invalidateQueries({ queryKey: ['transactions'] })
-
-  //       const outcome = resolveVtpassCode(res.vtpass_code)
-  //       const statePayload = {
-  //         type: 'airtime',
-  //         network: data.serviceId,
-  //         phone: data.phone,
-  //         amount_kobo: res.amount_kobo,
-  //         requestId: res.payment_reference,
-  //         date: new Date().toISOString(),
-  //       }
-
-  //       if (res.status === 'pending' || outcome.isPending) {
-  //         navigate('/payments/pending', { state: statePayload })
-  //       } else {
-  //         navigate('/payments/receipt', { state: statePayload })
-  //       }
-  //     } catch (err: any) {
-  //       alert(err?.response?.data?.message || 'Payment failed. Try again.')
-  //     } finally {
-  //       stopProcessing()
-  //     }
-  //   }
-  // }
+  console.log(paymentMethod, 'paymentMethod')
   const onSubmit = async (data: FormData) => {
   setPending(data)
 
@@ -110,7 +67,17 @@ export function AirtimeScreen() {
       serviceId: data.serviceId,
       phone:     data.phone,
       amount:    data.amount,
+      paymentMethod,
     })
+
+    // if (paymentMethod === 'wallet') {
+    //     // For wallet, we successfully created a pending transaction. Now ask for PIN.
+    //     stopProcessing()
+    //     setPin('')
+    //     setPinError('')
+    //     setShowPin(true)
+    //     return
+    //   }
 
     if (res.payment_url) {
       redirectToPayfixy(res.payment_url, {
@@ -152,6 +119,7 @@ export function AirtimeScreen() {
       await authService.verifyPin(val)
       const res = await paymentsService.airtime({
         serviceId: pending.serviceId, phone: pending.phone, amount: pending.amount,
+        method: 'wallet',
       })
       queryClient.invalidateQueries({ queryKey: ['wallet'] })
       queryClient.invalidateQueries({ queryKey: ['transactions'] })

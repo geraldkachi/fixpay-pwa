@@ -101,6 +101,7 @@ export function RepeatPaymentBottomSheet({ tx, open, onClose }: RepeatPaymentBot
           phone: details.phone || user?.phone || '',
           billers_code: details.billers_code || '',
           variation_code: details.variation_code || '',
+          method: paymentMethod === 'wallet' ? 'wallet' : 'directPay', 
         })
       }
 
@@ -174,6 +175,7 @@ export function RepeatPaymentBottomSheet({ tx, open, onClose }: RepeatPaymentBot
         serviceId: details.service_id,
         phone:     details.phone || user?.phone || '',
         amount:    Math.round(details.amount_kobo / 100), // initiateDirect takes naira
+        paymentMethod: paymentMethod,
       })
 
       if (res.payment_url) {

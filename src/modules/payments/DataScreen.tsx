@@ -138,6 +138,7 @@ export function DataScreen() {
       variationCode: data.variationCode,
       phone:         data.billersCode,
       amount:        data.amount,
+      paymentMethod,
     })
 
     const statePayload = {

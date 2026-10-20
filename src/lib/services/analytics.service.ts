@@ -6,6 +6,7 @@ export interface AnalyticsData {
   expense_total: number
   categories_breakdown: Record<string, number>
   disputes_summary: Record<string, number>
+  payment_methods_breakdown: Record<string, number>
   trend_data: Array<{
     date: string
     income: number

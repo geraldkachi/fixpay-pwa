@@ -17,6 +17,7 @@ export interface AirtimePayload {
   serviceId: string
   phone: string
   amount: number
+  method?: 'wallet' | 'directPay' // Added this
 }
 
 export interface DataPayload {
@@ -24,6 +25,7 @@ export interface DataPayload {
   billersCode: string   // subscriber phone number
   variationCode: string
   amount: number        // bundle price in Naira (from variation)
+  method?: 'wallet' | 'directPay' // <-- Add this
 }
 
 export interface TvPayload {
@@ -32,6 +34,7 @@ export interface TvPayload {
   variationCode: string
   subscriptionType: 'renew' | 'change'
   amount: number          // required — backend enforces min:100
+  method?: 'wallet' | 'directPay'
 }
 
 export interface ElectricityPayload {
@@ -39,6 +42,7 @@ export interface ElectricityPayload {
   billersCode: string
   variationCode: 'prepaid' | 'postpaid'
   amount: number
+  method?: 'wallet' | 'directPay'
 }
 
 export interface EducationPayload {
@@ -47,6 +51,7 @@ export interface EducationPayload {
   variationCode: string
   phone?: string
   amount: number        // variation price in Naira (required by backend min:100)
+  method?: 'wallet' | 'directPay'
 }
 
 export interface InsurancePayload {
@@ -55,6 +60,7 @@ export interface InsurancePayload {
   variationCode: string
   phone?: string
   amount: number        // variation price in Naira (required by backend min:100)
+  method?: 'wallet' | 'directPay'
 }
 
 export interface VerifyPayload {
@@ -160,40 +166,66 @@ export const paymentsService = {
   // All bill payments
   airtime: (payload: AirtimePayload): Promise<BillPaymentResponse> =>
     api.post<any>('/payments/vtpass',
-      vtpassPayload(payload.serviceId, payload.amount, payload.phone)
+      // vtpassPayload(payload.serviceId, payload.amount, payload.phone)
+      {
+          ...vtpassPayload(payload.serviceId, payload.amount, payload.phone),
+      ...(payload.method ? { method: payload.method } : {})
+      }
     ).then(r => mapResponse(r.data, payload.amount)),
 
   data: (payload: DataPayload): Promise<BillPaymentResponse> =>
     api.post<any>('/payments/vtpass',
       // phone = subscriber's mobile number (billersCode); amount = bundle price in Naira
-      vtpassPayload(payload.serviceId, payload.amount, payload.billersCode, payload.billersCode, payload.variationCode)
+      // vtpassPayload(payload.serviceId, payload.amount, payload.billersCode, payload.billersCode, payload.variationCode)
+      {
+        ...vtpassPayload(payload.serviceId, payload.amount, payload.billersCode, payload.billersCode, payload.variationCode),
+        ...(payload.method ? { method: payload.method } : {})
+      }
     ).then(r => mapResponse(r.data, payload.amount)),
 
   tv: (payload: TvPayload): Promise<BillPaymentResponse> =>
     api.post<any>('/payments/vtpass',
       // subscription_type is required by VTPass for TV (TC-015c / TC-016c)
       {
-        ...vtpassPayload(payload.serviceId, payload.amount, payload.billersCode, payload.billersCode, payload.variationCode),
-        subscription_type: payload.subscriptionType,
+        // ...vtpassPayload(payload.serviceId, payload.amount, payload.billersCode, payload.billersCode, payload.variationCode),
+        // subscription_type: payload.subscriptionType,
+        // subscription_type is required by VTPass for TV (TC-015c / TC-016c)
+      ...vtpassPayload(payload.serviceId, payload.amount, payload.billersCode, payload.billersCode, payload.variationCode),
+      subscription_type: payload.subscriptionType,
+      ...(payload.method ? { method: payload.method } : {})
       }
     ).then(r => mapResponse(r.data, payload.amount)),
 
   electricity: (payload: ElectricityPayload): Promise<BillPaymentResponse> =>
     api.post<any>('/payments/vtpass',
-      vtpassPayload(payload.serviceId, payload.amount, payload.billersCode, payload.billersCode, payload.variationCode)
+      // vtpassPayload(payload.serviceId, payload.amount, payload.billersCode, payload.billersCode, payload.variationCode)
+      {
+          ...vtpassPayload(payload.serviceId, payload.amount, payload.billersCode, payload.billersCode, payload.variationCode),
+      ...(payload.method ? { method: payload.method } : {})
+      }
     ).then(r => mapResponse(r.data, payload.amount)),
 
   education: (payload: EducationPayload): Promise<BillPaymentResponse> =>
     api.post<any>('/payments/vtpass',
       // billersCode = profile/exam ID; phone = contact number; amount = variation price
-      vtpassPayload(payload.serviceId, payload.amount, payload.phone ?? payload.billersCode, payload.billersCode, payload.variationCode)
+      // vtpassPayload(payload.serviceId, payload.amount, payload.phone ?? payload.billersCode, payload.billersCode, payload.variationCode)
+       {
+          ...vtpassPayload(payload.serviceId, payload.amount, payload.phone ?? payload.billersCode, payload.billersCode, payload.variationCode),
+      ...(payload.method ? { method: payload.method } : {})
+      }
     ).then(r => mapResponse(r.data, payload.amount)),
 
+  // insurance: (payload: InsurancePayload): Promise<BillPaymentResponse> =>
+  //   api.post<any>('/payments/vtpass',
+  //     // billersCode = vehicle plate / reference; phone = contact number; amount = plan price
+  //     vtpassPayload(payload.serviceId, payload.amount, payload.phone ?? payload.billersCode, payload.billersCode, payload.variationCode)
+  //   ).then(r => mapResponse(r.data, payload.amount)),
   insurance: (payload: InsurancePayload): Promise<BillPaymentResponse> =>
-    api.post<any>('/payments/vtpass',
+    api.post<any>('/payments/vtpass', {
       // billersCode = vehicle plate / reference; phone = contact number; amount = plan price
-      vtpassPayload(payload.serviceId, payload.amount, payload.phone ?? payload.billersCode, payload.billersCode, payload.variationCode)
-    ).then(r => mapResponse(r.data, payload.amount)),
+      ...vtpassPayload(payload.serviceId, payload.amount, payload.phone ?? payload.billersCode, payload.billersCode, payload.variationCode),
+      ...(payload.method ? { method: payload.method } : {})
+    }).then(r => mapResponse(r.data, payload.amount)),
 
   requery: (paymentReference: string): Promise<BillPaymentResponse> =>
     api.get<any>(`/payments/vtpass/${paymentReference}`).then(r => {
@@ -201,7 +233,7 @@ export const paymentsService = {
       return mapResponse(d, 0)
     }),
 
-  alternativeInitiate: (payload: any & { paymentMethod: 'payfixy' | 'bank_mandate' }): Promise<{ payment_reference: string, gateway_reference: string, status: string }> =>
+  alternativeInitiate: (payload: any & { paymentMethod: 'wallet' | 'payfixy' | 'bank_mandate' }): Promise<{ payment_reference: string, gateway_reference: string, status: string }> =>
     api.post<any>('/payments/alternative/initiate', {
       service_id: payload.serviceId,
       amount_kobo: Math.round(payload.amount * 100),
@@ -218,12 +250,13 @@ export const paymentsService = {
 
   // Direct Payfixy initiate — POST /payments/vtpass returns a payment_url
   // to hand off to the gateway widget. NO PIN involved.
-  initiateDirect: (payload: { serviceId: string; phone?: string; amount: number, billersCode?: string, variationCode?: string, paymentMethod: 'payfixy' | 'bank_mandate',  subscriptionType?: 'renew' | 'change' }) =>
+  initiateDirect: (payload: { serviceId: string; phone?: string; amount: number, billersCode?: string, variationCode?: string, paymentMethod: 'wallet' | 'payfixy' | 'bank_mandate',  subscriptionType?: 'renew' | 'change'}) =>
     api.post<any>('/payments/vtpass', {
       service_id: payload.serviceId,
       amount_kobo: Math.round(payload.amount * 100),
       phone: payload.phone || '',
-      payment_method: payload.paymentMethod,
+      payment_method: payload.paymentMethod === 'wallet' ? 'wallet' : 'directPay',
+      method: payload.paymentMethod === 'wallet' ? 'wallet' : 'directPay',
       billers_code: payload.billersCode,
       variation_code: payload.variationCode,
     }).then(r => {
