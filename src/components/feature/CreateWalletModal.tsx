@@ -394,7 +394,8 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
             ) : (
               <Button
                 type="submit"
-                disabled={isPending}
+                // disabled={isPending}
+                disabled={true}
                 className="flex-1"
                 style={{ background: 'var(--brand-primary)' }}
               >

@@ -65,7 +65,7 @@ export function HomeScreen() {
               <p className="text-sm text-white/70 mb-4 max-w-xs mx-auto">
                 Create a wallet to start making payments and managing your finances
               </p>
-              <Button 
+              <Button disabled
                 className="bg-white text-brand-primary hover:bg-white/90 rounded-[12px] px-6"
                 onClick={() => setShowCreateWallet(true)}
               >
