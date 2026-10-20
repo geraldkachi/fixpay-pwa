@@ -52,7 +52,7 @@ export function HomeScreen() {
           <div 
             className="mx-4 rounded-[20px] p-6 text-center text-white relative overflow-hidden cursor-pointer"
             style={{ background: 'var(--brand-primary)' }}
-            onClick={() => setShowCreateWallet(true)}
+            // onClick={() => setShowCreateWallet(true)}
           >
             <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-white/10 pointer-events-none" />
             <div className="absolute -bottom-12 -left-8 w-40 h-40 rounded-full bg-white/10 pointer-events-none" />
@@ -67,7 +67,7 @@ export function HomeScreen() {
               </p>
               <Button disabled
                 className="bg-white text-brand-primary hover:bg-white/90 rounded-[12px] px-6"
-                onClick={() => setShowCreateWallet(true)}
+                // onClick={() => setShowCreateWallet(true)}
               >
                 Create Wallet
               </Button>
