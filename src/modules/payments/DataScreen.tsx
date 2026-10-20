@@ -175,7 +175,13 @@ export function DataScreen() {
     startProcessing()
     try {
       await authService.verifyPin(val)
-      const res = await paymentsService.data(pending)
+      // const res = await paymentsService.data(pending)
+      const res = await paymentsService.data(
+        { 
+        ...pending, 
+        method: 'wallet' 
+      }
+      )
       queryClient.invalidateQueries({ queryKey: ['wallet'] })
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
 

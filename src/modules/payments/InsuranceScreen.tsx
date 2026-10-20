@@ -200,6 +200,7 @@ const defaultPhone = toLocalNgPhone(userPhone)
       variationCode: pending.variationCode,
       phone:         pending.phone,
       amount:        pending.amount,
+      method: 'wallet',  // ← explicitly set method to wallet
     })
     queryClient.invalidateQueries({ queryKey: ['wallet'] })
     queryClient.invalidateQueries({ queryKey: ['transactions'] })

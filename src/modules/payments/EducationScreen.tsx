@@ -196,6 +196,7 @@ const onSubmit = async (data: FormData) => {
       variationCode: pending.variationCode,
       phone,
       amount:        pending.amount,
+      method: 'wallet',  // ← explicitly set method to wallet
     })
     queryClient.invalidateQueries({ queryKey: ['wallet'] })
     queryClient.invalidateQueries({ queryKey: ['transactions'] })

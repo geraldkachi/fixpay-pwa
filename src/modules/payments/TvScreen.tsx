@@ -231,6 +231,7 @@ export function TvScreen() {
       subscriptionType: pending.subscriptionType,
       amount,
       // phone,
+      method: 'wallet',  // ← explicitly set method to wallet
     })
     queryClient.invalidateQueries({ queryKey: ['wallet'] })
     queryClient.invalidateQueries({ queryKey: ['transactions'] })
