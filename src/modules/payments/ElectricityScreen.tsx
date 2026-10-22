@@ -59,7 +59,7 @@ export function ElectricityScreen() {
   const AMOUNTS = [500, 1000, 2000, 5000, 10000]
   const userPhone = useAuthStore(s => s.user?.phone ?? '')
   console.log(userPhone)
-const defaultPhone = toLocalNgPhone(userPhone)
+  const defaultPhone = toLocalNgPhone(userPhone)
   const { register, handleSubmit, setValue, watch, formState: { errors }, getValues } = useForm<FormData>({
     resolver: zodResolver(schema) as Resolver<FormData>,
     defaultValues: { serviceId: 'ikeja-electric', billersCode: '', variationCode: 'prepaid', amount: 0, phone: defaultPhone, },
@@ -192,10 +192,10 @@ const defaultPhone = toLocalNgPhone(userPhone)
       await authService.verifyPin(val)
       // const res = await paymentsService.electricity(pending)
       const res = await paymentsService.electricity(
-         { 
-        ...pending, 
-        method: 'wallet' 
-      }
+        {
+          ...pending,
+          method: 'wallet'
+        }
       )
       queryClient.invalidateQueries({ queryKey: ['wallet'] })
       queryClient.invalidateQueries({ queryKey: ['transactions'] })

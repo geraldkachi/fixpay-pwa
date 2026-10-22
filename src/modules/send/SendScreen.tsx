@@ -127,7 +127,7 @@ export function SendScreen() {
             <p className="text-[14px] text-gray-500 mt-2 mb-6">
               To keep our platform secure and comply with regulations, please complete your BVN verification to unlock transfers.
             </p>
-            <Button onClick={() => navigate('/kyc')} fullWidth className="mb-3">
+            <Button onClick={() => navigate('/kyc')} fullWidth className="mb-3 hidden">
               Verify BVN Now
             </Button>
             <Button variant="ghost" onClick={handleCheckStatus} loading={checkingStatus} fullWidth className="text-brand">
